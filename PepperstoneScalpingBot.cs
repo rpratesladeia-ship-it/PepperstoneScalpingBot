@@ -1,7 +1,6 @@
 // PepperstoneScalpingBot.cs
-// Código-fonte inicial para um cBot próprio do cTrader.
-// ATENÇÃO: arquivo-fonte ainda NÃO compilado nem testado no cTrader.
-// Use primeiro em conta DEMO e faça backtest antes de qualquer uso real.
+// Código-fonte para cBot próprio do cTrader.
+// Não considerar pronto para conta real sem compilação, backtest e teste DEMO.
 
 using System;
 using cAlgo.API;
@@ -59,7 +58,6 @@ namespace cAlgo.Robots
         private ExponentialMovingAverage _slowEma;
         private RelativeStrengthIndex _rsi;
         private AverageTrueRange _atr;
-
         private DateTime _day;
         private double _dayStartEquity;
         private bool _dailyStopTriggered;
@@ -77,7 +75,6 @@ namespace cAlgo.Robots
             _slowEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, SlowEmaPeriod);
             _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, RsiPeriod);
             _atr = Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.Exponential);
-
             _day = Server.Time.Date;
             _dayStartEquity = Account.Equity;
             _dailyStopTriggered = false;
@@ -89,7 +86,6 @@ namespace cAlgo.Robots
         protected override void OnBar()
         {
             ResetDailyGuardIfNeeded();
-
             if (_dailyStopTriggered || DailyLossLimitReached())
                 return;
 
@@ -108,36 +104,30 @@ namespace cAlgo.Robots
             double slowPrevious = _slowEma.Result.Last(2);
             double rsi = _rsi.Result.Last(1);
             double atrPips = _atr.Result.Last(1) / Symbol.PipSize;
-
             if (atrPips <= 0)
                 return;
 
             bool bullishCross = fastPrevious <= slowPrevious && fastNow > slowNow;
             bool bearishCross = fastPrevious >= slowPrevious && fastNow < slowNow;
-
             double stopLossPips = atrPips * StopAtrMultiplier;
             double takeProfitPips = atrPips * TakeProfitAtrMultiplier;
 
             if (bullishCross && rsi >= BuyRsiMin && rsi <= BuyRsiMax)
                 OpenPosition(TradeType.Buy, stopLossPips, takeProfitPips);
-
             else if (bearishCross && rsi >= SellRsiMin && rsi <= SellRsiMax)
                 OpenPosition(TradeType.Sell, stopLossPips, takeProfitPips);
         }
 
         private void OpenPosition(TradeType tradeType, double stopLossPips, double takeProfitPips)
         {
-            // Estimativa de volume baseada no risco monetário e no valor do pip.
-            // Deve ser validada no backtest para o símbolo e as condições da corretora.
+            // PipValue é usado no cálculo em lotes; depois convertemos para unidades.
             double riskMoney = Account.Equity * (RiskPercent / 100.0);
-            double lots = riskMoney / (stopLossPips * Symbol.PipValue);
-
-            if (double.IsNaN(lots) || double.IsInfinity(lots) || lots <= 0)
+            double riskLots = riskMoney / (stopLossPips * Symbol.PipValue);
+            double units = Symbol.QuantityToVolumeInUnits(riskLots);
+            if (double.IsNaN(units) || double.IsInfinity(units) || units <= 0)
                 return;
 
-            double volume = Symbol.QuantityToVolumeInUnits(lots);
-            volume = Symbol.NormalizeVolumeInUnits(volume, RoundingMode.Down);
-
+            double volume = Symbol.NormalizeVolumeInUnits(units, RoundingMode.Down);
             if (volume < Symbol.VolumeInUnitsMin)
             {
                 Print("Sinal ignorado: volume calculado menor que o mínimo permitido.");
@@ -147,18 +137,9 @@ namespace cAlgo.Robots
             if (volume > Symbol.VolumeInUnitsMax)
                 volume = Symbol.NormalizeVolumeInUnits(Symbol.VolumeInUnitsMax, RoundingMode.Down);
 
-            var result = ExecuteMarketOrder(
-                tradeType,
-                SymbolName,
-                volume,
-                BotLabel,
-                stopLossPips,
-                takeProfitPips
-            );
-
+            var result = ExecuteMarketOrder(tradeType, SymbolName, volume, BotLabel, stopLossPips, takeProfitPips);
             if (result.IsSuccessful)
-                Print("{0} aberto. Volume={1}, SL={2:F1} pips, TP={3:F1} pips",
-                    tradeType, volume, stopLossPips, takeProfitPips);
+                Print("{0} aberto. Volume={1}, SL={2:F1} pips, TP={3:F1} pips", tradeType, volume, stopLossPips, takeProfitPips);
             else
                 Print("Ordem não executada: {0}", result.Error);
         }
@@ -169,14 +150,12 @@ namespace cAlgo.Robots
                 return false;
 
             double lossPercent = ((_dayStartEquity - Account.Equity) / _dayStartEquity) * 100.0;
-
             if (lossPercent >= DailyLossLimitPercent)
             {
                 _dailyStopTriggered = true;
                 Print("LIMITE DIÁRIO ATINGIDO ({0:F2}%). Nenhuma nova entrada será aberta hoje.", lossPercent);
                 return true;
             }
-
             return false;
         }
 
@@ -184,7 +163,6 @@ namespace cAlgo.Robots
         {
             if (Server.Time.Date == _day)
                 return;
-
             _day = Server.Time.Date;
             _dayStartEquity = Account.Equity;
             _dailyStopTriggered = false;
