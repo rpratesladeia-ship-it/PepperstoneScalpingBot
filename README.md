@@ -1,23 +1,17 @@
-# PepperstoneScalpingBot — projeto inicial
+# PepperstoneScalpingBot
 
-Projeto experimental para o cTrader Automate/cBots, preparado para ser enviado a um repositório GitHub pelo Android.
+cBot experimental para cTrader Automate (.NET 8), com cruzamento EMA 9/21, filtro RSI, stop e alvo por ATR, filtro de spread e limite diário de novas entradas.
 
-## Arquivos
-- `PepperstoneScalpingBot.cs`: código-fonte inicial.
-- `PepperstoneScalpingBot.csproj`: projeto .NET com referência ao pacote cTrader Automate.
-- `.github/workflows/build-cbot.yml`: workflow manual/automático para tentar compilar com a imagem Linux oficial do cTrader CLI e publicar o `.algo` como artefato do GitHub Actions.
+## Compilar pelo celular
+1. Abra a aba **Actions** neste repositório.
+2. Selecione **Build cTrader cBot** e toque em **Run workflow**.
+3. Aguarde a execução terminar.
+4. Se ficar verde, abra a execução e baixe o artefato **PepperstoneScalpingBot-algo**.
+5. Se falhar, abra o passo vermelho e envie a mensagem de erro para correção.
 
-## Como enviar pelo celular
-1. No GitHub, crie um repositório novo chamado `PepperstoneScalpingBot`.
-2. Envie todos os arquivos e pastas deste pacote, mantendo o caminho `.github/workflows/build-cbot.yml`.
-3. Abra a aba **Actions** do repositório e habilite Actions, se solicitado.
-4. Execute **Build cTrader cBot (experimental)** com **Run workflow**.
-5. Abra a execução concluída e verifique os logs. Se falhar, copie a mensagem de erro; não coloque senhas nem tokens no chat.
-6. Se concluir, baixe o artefato `PepperstoneScalpingBot-algo` e confirme que contém um `.algo`.
-
-## Limitações importantes
-- Este projeto ainda NÃO foi compilado ou executado nesta sessão.
-- O workflow é experimental; a imagem oficial/CLI e o layout do output podem mudar. O primeiro run deve ser tratado como diagnóstico.
-- Mesmo que compile, isso não valida a estratégia nem o dimensionamento de volume. Revisar o código, executar backtests e testar em conta demo antes de operar.
-- Nunca salve senha, token, cTrader ID, chaves de API ou credenciais de conta no repositório.
-- O limite diário implementado é uma proteção de software e não garante que a perda real nunca ultrapasse o limite (gaps, slippage, falhas, comissões e execução podem afetar o resultado).
+## Avisos importantes
+- Use somente em conta DEMO e faça backtest antes de qualquer uso real.
+- O limite diário impede novas entradas, mas não fecha automaticamente posições abertas nem garante perda máxima.
+- O dimensionamento de volume depende das especificações do símbolo e da moeda da conta; confira no backtest/demo.
+- Nunca salve senhas, tokens ou credenciais no repositório.
+- O código ainda precisa compilar e passar por backtest e teste em DEMO antes de ser considerado utilizável.
