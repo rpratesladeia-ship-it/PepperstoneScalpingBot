@@ -16,7 +16,7 @@ namespace cAlgo.Robots
         [Parameter("Símbolos (separados por vírgula)", DefaultValue = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD")]
         public string SymbolsToScan { get; set; }
 
-        [Parameter("Período de sinal", DefaultValue = "Hour")]
+        [Parameter("Período de sinal", DefaultValue = "Minute")]
         public TimeFrame SignalTimeFrame { get; set; }
 
         [Parameter("Intervalo de varredura (segundos)", DefaultValue = 15, MinValue = 5, MaxValue = 300)]
@@ -31,10 +31,10 @@ namespace cAlgo.Robots
         [Parameter("Limite de perda diária (%)", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 2.0)]
         public double DailyLossLimitPercent { get; set; }
 
-        [Parameter("EMA rápida", DefaultValue = 9, MinValue = 2)]
+        [Parameter("EMA rápida", DefaultValue = 5, MinValue = 2)]
         public int FastEmaPeriod { get; set; }
 
-        [Parameter("EMA lenta", DefaultValue = 21, MinValue = 3)]
+        [Parameter("EMA lenta", DefaultValue = 13, MinValue = 3)]
         public int SlowEmaPeriod { get; set; }
 
         [Parameter("RSI período", DefaultValue = 14, MinValue = 2)]
@@ -55,13 +55,13 @@ namespace cAlgo.Robots
         [Parameter("ATR período", DefaultValue = 14, MinValue = 2)]
         public int AtrPeriod { get; set; }
 
-        [Parameter("Stop ATR multiplicador", DefaultValue = 2.0, MinValue = 0.5)]
+        [Parameter("Stop ATR multiplicador", DefaultValue = 1.5, MinValue = 0.5)]
         public double StopAtrMultiplier { get; set; }
 
-        [Parameter("Alvo ATR multiplicador", DefaultValue = 3.0, MinValue = 0.5)]
+        [Parameter("Alvo ATR multiplicador", DefaultValue = 2.0, MinValue = 0.5)]
         public double TakeProfitAtrMultiplier { get; set; }
 
-        [Parameter("Spread máximo (pips)", DefaultValue = 2.0, MinValue = 0.1)]
+        [Parameter("Spread máximo (pips)", DefaultValue = 1.5, MinValue = 0.1)]
         public double MaxSpreadPips { get; set; }
 
         [Parameter("Etiqueta", DefaultValue = "PepperstoneScalpingBot")]
@@ -120,7 +120,7 @@ namespace cAlgo.Robots
                         LastProcessedBar = DateTime.MinValue
                     };
                     _states[symbol.Name] = state;
-                    Print("Monitorando {0} no período {1}.", symbol.Name, SignalTimeFrame);
+                    Print("Monitorando {0} no período {1}; candles carregados: {2}.", symbol.Name, SignalTimeFrame, bars.Count);
                 }
                 catch (Exception ex)
                 {
@@ -165,7 +165,10 @@ namespace cAlgo.Robots
         private void ScanSymbol(string symbolName, SymbolState state)
         {
             if (state.Bars.Count < Math.Max(SlowEmaPeriod, AtrPeriod) + 3)
+            {
+                Print("{0}: aguardando histórico suficiente ({1} candles).", symbolName, state.Bars.Count);
                 return;
+            }
 
             DateTime closedBarTime = state.Bars.OpenTimes.Last(1);
             if (closedBarTime == state.LastProcessedBar)
@@ -186,7 +189,10 @@ namespace cAlgo.Robots
             double rsi = state.Rsi.Result.Last(1);
             double atrPips = state.Atr.Result.Last(1) / state.Symbol.PipSize;
             if (atrPips <= 0)
+            {
+                Print("{0}: ATR inválido; sinal ignorado.", symbolName);
                 return;
+            }
 
             bool bullishCross = fastPrevious <= slowPrevious && fastNow > slowNow;
             bool bearishCross = fastPrevious >= slowPrevious && fastNow < slowNow;
@@ -197,6 +203,9 @@ namespace cAlgo.Robots
                 OpenPosition(symbolName, state.Symbol, TradeType.Buy, stopLossPips, takeProfitPips);
             else if (bearishCross && rsi >= SellRsiMin && rsi <= SellRsiMax)
                 OpenPosition(symbolName, state.Symbol, TradeType.Sell, stopLossPips, takeProfitPips);
+            else
+                Print("{0}: sem entrada em {1}; EMA9/EMA21={2:F5}/{3:F5}; RSI={4:F1}; spread={5:F2} pips.",
+                    symbolName, SignalTimeFrame, fastNow, slowNow, rsi, spreadPips);
         }
 
         private void OpenPosition(string symbolName, Symbol symbol, TradeType tradeType, double stopLossPips, double takeProfitPips)
