@@ -70,6 +70,18 @@ namespace cAlgo.Robots
         [Parameter("Etiqueta", DefaultValue = "PepperstoneScalpingBot")]
         public string BotLabel { get; set; }
 
+        [Parameter("Ativar trailing financeiro (BRL)", DefaultValue = true)]
+        public bool EnableFinancialTrailingStop { get; set; }
+
+        [Parameter("Ativação do trailing (R$)", DefaultValue = 0.10, MinValue = 0.01)]
+        public double TrailingActivationBrl { get; set; }
+
+        [Parameter("Recuo do pico para fechar (R$)", DefaultValue = 0.05, MinValue = 0.01)]
+        public double TrailingRetraceBrl { get; set; }
+
+        [Parameter("Conversão: 1 moeda da conta em BRL (0 = desativado)", DefaultValue = 0.0, MinValue = 0.0)]
+        public double AccountCurrencyToBrlRate { get; set; }
+
         private sealed class SymbolState
         {
             public Symbol Symbol;
@@ -82,9 +94,12 @@ namespace cAlgo.Robots
         }
 
         private readonly Dictionary<string, SymbolState> _states = new Dictionary<string, SymbolState>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, double> _peakProfitBrlByPosition = new Dictionary<int, double>();
+        private readonly HashSet<int> _trailingActivatedPositions = new HashSet<int>();
         private DateTime _day;
         private double _dayStartEquity;
         private bool _dailyStopTriggered;
+        private bool _trailingCurrencyWarningLogged;
 
         protected override void OnStart()
         {
@@ -141,6 +156,10 @@ namespace cAlgo.Robots
             _day = Server.Time.Date;
             _dayStartEquity = Account.Equity;
             _dailyStopTriggered = false;
+
+            if (EnableFinancialTrailingStop && AccountCurrencyToBrlRate <= 0)
+                Print("TRAILING BRL DESATIVADO POR SEGURANÇA: informe a conversão atual da moeda da conta para BRL. Nenhuma conversão será presumida.");
+
             Timer.Start(ScanIntervalSeconds);
             Print("Scanner multiativos iniciado: {0} símbolos; máximo {1} posições; risco {2:F2}% por operação. Confirme que a conta é DEMO.",
                 _states.Count, MaxOpenPositions, RiskPercent);
@@ -150,6 +169,10 @@ namespace cAlgo.Robots
         protected override void OnTimer()
         {
             ResetDailyGuardIfNeeded();
+
+            // Gerenciar saídas primeiro, inclusive quando o limite diário já bloqueou novas entradas.
+            ManageFinancialTrailingStop();
+
             if (_dailyStopTriggered || DailyLossLimitReached())
                 return;
 
@@ -244,6 +267,82 @@ namespace cAlgo.Robots
                     symbolName, tradeType, volume, symbol.VolumeInUnitsToQuantity(volume), stopLossPips, takeProfitPips, _states[symbolName].Rsi.Result.Last(1));
             else
                 Print("{0}: ordem não executada: {1}", symbolName, result.Error);
+        }
+
+        private void ManageFinancialTrailingStop()
+        {
+            if (!EnableFinancialTrailingStop)
+                return;
+
+            if (AccountCurrencyToBrlRate <= 0 || double.IsNaN(AccountCurrencyToBrlRate) || double.IsInfinity(AccountCurrencyToBrlRate))
+            {
+                if (!_trailingCurrencyWarningLogged)
+                {
+                    Print("TRAILING BRL INATIVO: taxa de conversão inválida. Configure 1 unidade da moeda da conta = quantos reais.");
+                    _trailingCurrencyWarningLogged = true;
+                }
+                return;
+            }
+
+            Position[] botPositions = Positions.FindAll(BotLabel);
+            var openIds = new HashSet<int>();
+            foreach (Position position in botPositions)
+            {
+                openIds.Add(position.Id);
+                double netProfitBrl = position.NetProfit * AccountCurrencyToBrlRate;
+
+                if (!_trailingActivatedPositions.Contains(position.Id))
+                {
+                    if (netProfitBrl < TrailingActivationBrl)
+                        continue;
+
+                    _trailingActivatedPositions.Add(position.Id);
+                    _peakProfitBrlByPosition[position.Id] = netProfitBrl;
+                    Print("TRAILING ATIVADO: posição {0} ({1}) lucro líquido estimado R${2:F2}; pico inicial registrado.",
+                        position.Id, position.SymbolName, netProfitBrl);
+                    continue;
+                }
+
+                double peakProfitBrl;
+                if (!_peakProfitBrlByPosition.TryGetValue(position.Id, out peakProfitBrl))
+                    peakProfitBrl = netProfitBrl;
+
+                if (netProfitBrl > peakProfitBrl)
+                {
+                    peakProfitBrl = netProfitBrl;
+                    _peakProfitBrlByPosition[position.Id] = peakProfitBrl;
+                    Print("TRAILING: posição {0} novo pico R${1:F2}.", position.Id, peakProfitBrl);
+                }
+
+                double retraceBrl = peakProfitBrl - netProfitBrl;
+                if (retraceBrl >= TrailingRetraceBrl)
+                {
+                    Print("TRAILING FECHAMENTO: posição {0} ({1}); pico R${2:F2}, atual R${3:F2}, recuo R${4:F2}. Solicitando fechamento.",
+                        position.Id, position.SymbolName, peakProfitBrl, netProfitBrl, retraceBrl);
+                    TradeResult closeResult = ClosePosition(position);
+                    if (closeResult.IsSuccessful)
+                    {
+                        _peakProfitBrlByPosition.Remove(position.Id);
+                        _trailingActivatedPositions.Remove(position.Id);
+                        Print("TRAILING: posição {0} fechada com sucesso.", position.Id);
+                    }
+                    else
+                    {
+                        Print("ERRO TRAILING: não foi possível fechar posição {0}: {1}.", position.Id, closeResult.Error);
+                    }
+                }
+            }
+
+            var staleIds = new List<int>();
+            foreach (int id in _peakProfitBrlByPosition.Keys)
+                if (!openIds.Contains(id))
+                    staleIds.Add(id);
+
+            foreach (int id in staleIds)
+            {
+                _peakProfitBrlByPosition.Remove(id);
+                _trailingActivatedPositions.Remove(id);
+            }
         }
 
         private bool DailyLossLimitReached()
