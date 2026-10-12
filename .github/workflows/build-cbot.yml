@@ -11,19 +11,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compile cBot
+      - name: Show cTrader CLI version
+        run: docker run --rm ghcr.io/spotware/ctrader-console:latest --version
+
+      - name: Compile cBot (maximum 3 minutes)
+        timeout-minutes: 4
         run: |
-          docker run --rm \
+          timeout 180s docker run --rm \
             -v "$PWD:/workspace" \
             -w /workspace \
             ghcr.io/spotware/ctrader-console:latest \
             build /workspace/PepperstoneScalpingBot.csproj
 
       - name: Locate compiled file
-        run: find . -type f -name '*.algo' -print
+        run: |
+          find . -type f -name '*.algo' -print
+          test -n "$(find . -type f -name '*.algo' -print -quit)"
 
       - name: Upload compiled file
         uses: actions/upload-artifact@v4
