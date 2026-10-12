@@ -11,28 +11,31 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show cTrader CLI version
-        run: docker run --rm ghcr.io/spotware/ctrader-console:latest ctrader-cli --version
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
 
-      - name: Compile cBot (maximum 3 minutes)
-        timeout-minutes: 4
-        run: |
-          timeout 180s docker run --rm \
-            -v "$PWD:/workspace" \
-            -w /workspace \
-            ghcr.io/spotware/ctrader-console:latest \
-            ctrader-cli build /workspace/PepperstoneScalpingBot.csproj
+      - name: Show SDK version
+        run: dotnet --version
 
-      - name: Locate compiled file
+      - name: Restore cTrader project
+        run: dotnet restore PepperstoneScalpingBot.csproj
+
+      - name: Compile cBot
+        run: dotnet build PepperstoneScalpingBot.csproj --configuration Release --no-restore
+
+      - name: Verify .algo output
+        shell: bash
         run: |
           find . -type f -name '*.algo' -print
           test -n "$(find . -type f -name '*.algo' -print -quit)"
 
-      - name: Upload compiled file
+      - name: Upload compiled cBot
         uses: actions/upload-artifact@v4
         with:
           name: PepperstoneScalpingBot-algo
