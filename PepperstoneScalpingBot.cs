@@ -315,7 +315,7 @@ namespace cAlgo.Robots
                 }
 
                 double retraceBrl = peakProfitBrl - netProfitBrl;
-                if (retraceBrl >= TrailingRetraceBrl)
+                if (retraceBrl + 0.000000001 >= TrailingRetraceBrl)
                 {
                     Print("TRAILING FECHAMENTO: posição {0} ({1}); pico R${2:F2}, atual R${3:F2}, recuo R${4:F2}. Solicitando fechamento.",
                         position.Id, position.SymbolName, peakProfitBrl, netProfitBrl, retraceBrl);
