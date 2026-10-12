@@ -1,8 +1,9 @@
 // PepperstoneScalpingBot.cs
-// Código-fonte para cBot próprio do cTrader.
-// Não considerar pronto para conta real sem compilação, backtest e teste DEMO.
+// Scanner multiativos experimental para cTrader Automate.
+// Testar somente em conta DEMO; compilação não substitui backtest e validação de risco.
 
 using System;
+using System.Collections.Generic;
 using cAlgo.API;
 using cAlgo.API.Indicators;
 using cAlgo.API.Internals;
@@ -12,6 +13,18 @@ namespace cAlgo.Robots
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class PepperstoneScalpingBot : Robot
     {
+        [Parameter("Símbolos (separados por vírgula)", DefaultValue = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD")]
+        public string SymbolsToScan { get; set; }
+
+        [Parameter("Período de sinal", DefaultValue = "Hour")]
+        public TimeFrame SignalTimeFrame { get; set; }
+
+        [Parameter("Intervalo de varredura (segundos)", DefaultValue = 15, MinValue = 5, MaxValue = 300)]
+        public int ScanIntervalSeconds { get; set; }
+
+        [Parameter("Máximo de posições simultâneas", DefaultValue = 3, MinValue = 1, MaxValue = 10)]
+        public int MaxOpenPositions { get; set; }
+
         [Parameter("Risco por operação (%)", DefaultValue = 0.5, MinValue = 0.1, MaxValue = 1.0)]
         public double RiskPercent { get; set; }
 
@@ -48,16 +61,24 @@ namespace cAlgo.Robots
         [Parameter("Alvo ATR multiplicador", DefaultValue = 3.0, MinValue = 0.5)]
         public double TakeProfitAtrMultiplier { get; set; }
 
-        [Parameter("Spread máximo (pips)", DefaultValue = 1.5, MinValue = 0.1)]
+        [Parameter("Spread máximo (pips)", DefaultValue = 2.0, MinValue = 0.1)]
         public double MaxSpreadPips { get; set; }
 
         [Parameter("Etiqueta", DefaultValue = "PepperstoneScalpingBot")]
         public string BotLabel { get; set; }
 
-        private ExponentialMovingAverage _fastEma;
-        private ExponentialMovingAverage _slowEma;
-        private RelativeStrengthIndex _rsi;
-        private AverageTrueRange _atr;
+        private sealed class SymbolState
+        {
+            public Symbol Symbol;
+            public Bars Bars;
+            public ExponentialMovingAverage FastEma;
+            public ExponentialMovingAverage SlowEma;
+            public RelativeStrengthIndex Rsi;
+            public AverageTrueRange Atr;
+            public DateTime LastProcessedBar;
+        }
+
+        private readonly Dictionary<string, SymbolState> _states = new Dictionary<string, SymbolState>(StringComparer.OrdinalIgnoreCase);
         private DateTime _day;
         private double _dayStartEquity;
         private bool _dailyStopTriggered;
@@ -71,39 +92,99 @@ namespace cAlgo.Robots
                 return;
             }
 
-            _fastEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, FastEmaPeriod);
-            _slowEma = Indicators.ExponentialMovingAverage(Bars.ClosePrices, SlowEmaPeriod);
-            _rsi = Indicators.RelativeStrengthIndex(Bars.ClosePrices, RsiPeriod);
-            _atr = Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.Exponential);
+            string[] requested = (SymbolsToScan ?? string.Empty).Split(',');
+            foreach (string raw in requested)
+            {
+                string name = raw.Trim();
+                if (name.Length == 0 || _states.ContainsKey(name))
+                    continue;
+
+                try
+                {
+                    Symbol symbol = Symbols.GetSymbol(name);
+                    if (symbol == null)
+                    {
+                        Print("Símbolo não encontrado na corretora: {0}. Confira o nome exato no cTrader.", name);
+                        continue;
+                    }
+
+                    Bars bars = MarketData.GetBars(SignalTimeFrame, symbol.Name);
+                    var state = new SymbolState
+                    {
+                        Symbol = symbol,
+                        Bars = bars,
+                        FastEma = Indicators.ExponentialMovingAverage(bars.ClosePrices, FastEmaPeriod),
+                        SlowEma = Indicators.ExponentialMovingAverage(bars.ClosePrices, SlowEmaPeriod),
+                        Rsi = Indicators.RelativeStrengthIndex(bars.ClosePrices, RsiPeriod),
+                        Atr = Indicators.AverageTrueRange(bars, AtrPeriod, MovingAverageType.Exponential),
+                        LastProcessedBar = DateTime.MinValue
+                    };
+                    _states[symbol.Name] = state;
+                    Print("Monitorando {0} no período {1}.", symbol.Name, SignalTimeFrame);
+                }
+                catch (Exception ex)
+                {
+                    Print("Não foi possível preparar {0}: {1}", name, ex.Message);
+                }
+            }
+
+            if (_states.Count == 0)
+            {
+                Print("ERRO: nenhum símbolo válido. Pare o cBot e confira os nomes dos ativos disponíveis na Pepperstone.");
+                Stop();
+                return;
+            }
+
             _day = Server.Time.Date;
             _dayStartEquity = Account.Equity;
             _dailyStopTriggered = false;
-
-            Print("Bot iniciado em {0}, timeframe {1}. Confirme que a conta é DEMO.", SymbolName, TimeFrame);
-            Print("Este cBot não usa Martingale e permite no máximo uma posição própria por símbolo.");
+            Timer.Start(ScanIntervalSeconds);
+            Print("Scanner multiativos iniciado: {0} símbolos; máximo {1} posições; risco {2:F2}% por operação. Confirme que a conta é DEMO.",
+                _states.Count, MaxOpenPositions, RiskPercent);
+            Print("O limite diário bloqueia novas entradas, mas não fecha posições abertas nem garante perda máxima.");
         }
 
-        protected override void OnBar()
+        protected override void OnTimer()
         {
             ResetDailyGuardIfNeeded();
             if (_dailyStopTriggered || DailyLossLimitReached())
                 return;
 
-            if (Bars.Count < Math.Max(SlowEmaPeriod, AtrPeriod) + 3)
+            foreach (KeyValuePair<string, SymbolState> pair in _states)
+            {
+                if (Positions.FindAll(BotLabel, pair.Key).Length > 0)
+                    continue;
+
+                if (Positions.FindAll(BotLabel).Length >= MaxOpenPositions)
+                    return;
+
+                ScanSymbol(pair.Key, pair.Value);
+            }
+        }
+
+        private void ScanSymbol(string symbolName, SymbolState state)
+        {
+            if (state.Bars.Count < Math.Max(SlowEmaPeriod, AtrPeriod) + 3)
                 return;
 
-            if (Symbol.Spread / Symbol.PipSize > MaxSpreadPips)
+            DateTime closedBarTime = state.Bars.OpenTimes.Last(1);
+            if (closedBarTime == state.LastProcessedBar)
                 return;
+            state.LastProcessedBar = closedBarTime;
 
-            if (Positions.FindAll(BotLabel, SymbolName).Length > 0)
+            double spreadPips = (state.Symbol.Ask - state.Symbol.Bid) / state.Symbol.PipSize;
+            if (spreadPips > MaxSpreadPips)
+            {
+                Print("{0}: sinal ignorado, spread {1:F2} pips acima do limite.", symbolName, spreadPips);
                 return;
+            }
 
-            double fastNow = _fastEma.Result.Last(1);
-            double fastPrevious = _fastEma.Result.Last(2);
-            double slowNow = _slowEma.Result.Last(1);
-            double slowPrevious = _slowEma.Result.Last(2);
-            double rsi = _rsi.Result.Last(1);
-            double atrPips = _atr.Result.Last(1) / Symbol.PipSize;
+            double fastNow = state.FastEma.Result.Last(1);
+            double fastPrevious = state.FastEma.Result.Last(2);
+            double slowNow = state.SlowEma.Result.Last(1);
+            double slowPrevious = state.SlowEma.Result.Last(2);
+            double rsi = state.Rsi.Result.Last(1);
+            double atrPips = state.Atr.Result.Last(1) / state.Symbol.PipSize;
             if (atrPips <= 0)
                 return;
 
@@ -113,35 +194,36 @@ namespace cAlgo.Robots
             double takeProfitPips = atrPips * TakeProfitAtrMultiplier;
 
             if (bullishCross && rsi >= BuyRsiMin && rsi <= BuyRsiMax)
-                OpenPosition(TradeType.Buy, stopLossPips, takeProfitPips);
+                OpenPosition(symbolName, state.Symbol, TradeType.Buy, stopLossPips, takeProfitPips);
             else if (bearishCross && rsi >= SellRsiMin && rsi <= SellRsiMax)
-                OpenPosition(TradeType.Sell, stopLossPips, takeProfitPips);
+                OpenPosition(symbolName, state.Symbol, TradeType.Sell, stopLossPips, takeProfitPips);
         }
 
-        private void OpenPosition(TradeType tradeType, double stopLossPips, double takeProfitPips)
+        private void OpenPosition(string symbolName, Symbol symbol, TradeType tradeType, double stopLossPips, double takeProfitPips)
         {
-            // PipValue é usado no cálculo em lotes; depois convertemos para unidades.
+            // PipValue é utilizado no cálculo em lotes; o resultado é convertido para unidades.
             double riskMoney = Account.Equity * (RiskPercent / 100.0);
-            double riskLots = riskMoney / (stopLossPips * Symbol.PipValue);
-            double units = Symbol.QuantityToVolumeInUnits(riskLots);
+            double riskLots = riskMoney / (stopLossPips * symbol.PipValue);
+            double units = symbol.QuantityToVolumeInUnits(riskLots);
             if (double.IsNaN(units) || double.IsInfinity(units) || units <= 0)
                 return;
 
-            double volume = Symbol.NormalizeVolumeInUnits(units, RoundingMode.Down);
-            if (volume < Symbol.VolumeInUnitsMin)
+            double volume = symbol.NormalizeVolumeInUnits(units, RoundingMode.Down);
+            if (volume < symbol.VolumeInUnitsMin)
             {
-                Print("Sinal ignorado: volume calculado menor que o mínimo permitido.");
+                Print("{0}: sinal ignorado; volume calculado menor que o mínimo permitido.", symbolName);
                 return;
             }
 
-            if (volume > Symbol.VolumeInUnitsMax)
-                volume = Symbol.NormalizeVolumeInUnits(Symbol.VolumeInUnitsMax, RoundingMode.Down);
+            if (volume > symbol.VolumeInUnitsMax)
+                volume = symbol.NormalizeVolumeInUnits(symbol.VolumeInUnitsMax, RoundingMode.Down);
 
-            var result = ExecuteMarketOrder(tradeType, SymbolName, volume, BotLabel, stopLossPips, takeProfitPips);
+            var result = ExecuteMarketOrder(tradeType, symbolName, volume, BotLabel, stopLossPips, takeProfitPips);
             if (result.IsSuccessful)
-                Print("{0} aberto. Volume={1}, SL={2:F1} pips, TP={3:F1} pips", tradeType, volume, stopLossPips, takeProfitPips);
+                Print("{0}: ordem {1} aberta. Volume={2}, SL={3:F1} pips, TP={4:F1} pips, RSI={5:F1}.",
+                    symbolName, tradeType, volume, stopLossPips, takeProfitPips, _states[symbolName].Rsi.Result.Last(1));
             else
-                Print("Ordem não executada: {0}", result.Error);
+                Print("{0}: ordem não executada: {1}", symbolName, result.Error);
         }
 
         private bool DailyLossLimitReached()
@@ -163,10 +245,17 @@ namespace cAlgo.Robots
         {
             if (Server.Time.Date == _day)
                 return;
+
             _day = Server.Time.Date;
             _dayStartEquity = Account.Equity;
             _dailyStopTriggered = false;
             Print("Novo dia. Referência de equity diária reiniciada.");
+        }
+
+        protected override void OnStop()
+        {
+            Timer.Stop();
+            Print("Scanner multiativos parado. Posições abertas não são fechadas automaticamente.");
         }
     }
 }
