@@ -25,7 +25,7 @@ jobs:
             -v "$PWD:/workspace" \
             -w /workspace \
             ghcr.io/spotware/ctrader-console:5.9.10 \
-            build /workspace/PepperstoneScalpingBot.csproj
+            ctrader-cli build /workspace/PepperstoneScalpingBot.csproj
 
       - name: Locate compiled file
         run: |
