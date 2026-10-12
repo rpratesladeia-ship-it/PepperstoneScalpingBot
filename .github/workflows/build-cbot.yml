@@ -1,0 +1,33 @@
+name: Build cTrader cBot
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'PepperstoneScalpingBot.cs'
+      - 'PepperstoneScalpingBot.csproj'
+      - '.github/workflows/build-cbot.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile cBot
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ghcr.io/spotware/ctrader-console:latest \
+            build /workspace/PepperstoneScalpingBot.csproj
+
+      - name: Locate compiled file
+        run: find . -type f -name '*.algo' -print
+
+      - name: Upload compiled file
+        uses: actions/upload-artifact@v4
+        with:
+          name: PepperstoneScalpingBot-algo
+          path: '**/*.algo'
+          if-no-files-found: error
