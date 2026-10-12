@@ -8,6 +8,6 @@
     <IncludeSource>false</IncludeSource>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="cTrader.Automate" Version="1.0.21" />
+    <PackageReference Include="cTrader.Automate" Version="1.*" />
   </ItemGroup>
 </Project>
