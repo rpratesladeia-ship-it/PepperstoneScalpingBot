@@ -24,10 +24,10 @@ jobs:
         run: dotnet --version
 
       - name: Restore cTrader project
-        run: dotnet restore PepperstoneScalpingBot.csproj
+        run: dotnet restore PepperstoneScalpingBot.csproj --verbosity minimal
 
       - name: Compile cBot
-        run: dotnet build PepperstoneScalpingBot.csproj --configuration Release --no-restore
+        run: dotnet build PepperstoneScalpingBot.csproj --configuration Release --no-restore --nologo
 
       - name: Verify .algo output
         shell: bash
