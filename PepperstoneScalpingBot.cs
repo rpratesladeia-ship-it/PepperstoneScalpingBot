@@ -28,6 +28,9 @@ namespace cAlgo.Robots
         [Parameter("Risco por operação (%)", DefaultValue = 0.5, MinValue = 0.1, MaxValue = 1.0)]
         public double RiskPercent { get; set; }
 
+        [Parameter("Limite máximo por ordem (lotes)", DefaultValue = 0.10, MinValue = 0.01, MaxValue = 1.0)]
+        public double MaxLotsPerTrade { get; set; }
+
         [Parameter("Limite de perda diária (%)", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 2.0)]
         public double DailyLossLimitPercent { get; set; }
 
@@ -210,14 +213,22 @@ namespace cAlgo.Robots
 
         private void OpenPosition(string symbolName, Symbol symbol, TradeType tradeType, double stopLossPips, double takeProfitPips)
         {
-            // PipValue é utilizado no cálculo em lotes; o resultado é convertido para unidades.
-            double riskMoney = Account.Equity * (RiskPercent / 100.0);
-            double riskLots = riskMoney / (stopLossPips * symbol.PipValue);
-            double units = symbol.QuantityToVolumeInUnits(riskLots);
-            if (double.IsNaN(units) || double.IsInfinity(units) || units <= 0)
+            // API oficial calcula o volume diretamente em unidades para o risco percentual.
+            // Não converter o volume retornado novamente de lotes para unidades.
+            double unitsByRisk = symbol.VolumeForProportionalRisk(
+                ProportionalAmountType.Equity, RiskPercent, stopLossPips, RoundingMode.Down);
+            double maxUnits = symbol.QuantityToVolumeInUnits(MaxLotsPerTrade);
+            if (double.IsNaN(unitsByRisk) || double.IsInfinity(unitsByRisk) || unitsByRisk <= 0 ||
+                double.IsNaN(maxUnits) || double.IsInfinity(maxUnits) || maxUnits <= 0)
+            {
+                Print("{0}: volume inválido calculado; ordem cancelada por segurança.", symbolName);
                 return;
+            }
 
+            double units = Math.Min(unitsByRisk, maxUnits);
             double volume = symbol.NormalizeVolumeInUnits(units, RoundingMode.Down);
+            Print("{0}: risco alvo {1:F2}% | volume por risco {2} unidades | teto {3} unidades | volume final {4} unidades ({5:F2} lotes).",
+                symbolName, RiskPercent, unitsByRisk, maxUnits, volume, symbol.VolumeInUnitsToQuantity(volume));
             if (volume < symbol.VolumeInUnitsMin)
             {
                 Print("{0}: sinal ignorado; volume calculado menor que o mínimo permitido.", symbolName);
@@ -229,8 +240,8 @@ namespace cAlgo.Robots
 
             var result = ExecuteMarketOrder(tradeType, symbolName, volume, BotLabel, stopLossPips, takeProfitPips);
             if (result.IsSuccessful)
-                Print("{0}: ordem {1} aberta. Volume={2}, SL={3:F1} pips, TP={4:F1} pips, RSI={5:F1}.",
-                    symbolName, tradeType, volume, stopLossPips, takeProfitPips, _states[symbolName].Rsi.Result.Last(1));
+                Print("{0}: ordem {1} aberta. Volume={2} unidades ({3:F2} lotes), SL={4:F1} pips, TP={5:F1} pips, RSI={6:F1}.",
+                    symbolName, tradeType, volume, symbol.VolumeInUnitsToQuantity(volume), stopLossPips, takeProfitPips, _states[symbolName].Rsi.Result.Last(1));
             else
                 Print("{0}: ordem não executada: {1}", symbolName, result.Error);
         }
