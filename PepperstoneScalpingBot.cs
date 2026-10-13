@@ -19,7 +19,7 @@ namespace cAlgo.Robots
         public double RiskPercent { get; set; }
         [Parameter("Perda diária máxima (%)", Group = "Risco", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 5.0)]
         public double DailyLossLimitPercent { get; set; }
-        [Parameter("Máx. entradas por dia", Group = "Risco", DefaultValue = 4, MinValue = 1, MaxValue = 20)]
+        [Parameter("Máx. entradas por dia", Group = "Risco", DefaultValue = 10, MinValue = 1, MaxValue = 20)]
         public int MaxTradesPerDay { get; set; }
         [Parameter("Máx. perdas seguidas", Group = "Risco", DefaultValue = 2, MinValue = 1, MaxValue = 8)]
         public int MaxConsecutiveLosses { get; set; }
@@ -29,13 +29,13 @@ namespace cAlgo.Robots
         public int FastEma { get; set; }
         [Parameter("EMA H1 longa", Group = "Tendência", DefaultValue = 200, MinValue = 50)]
         public int SlowEma { get; set; }
-        [Parameter("Janela de queda (candles)", Group = "Entrada", DefaultValue = 12, MinValue = 3, MaxValue = 40)]
+        [Parameter("Janela de queda (candles)", Group = "Entrada", DefaultValue = 8, MinValue = 3, MaxValue = 40)]
         public int DropBars { get; set; }
-        [Parameter("Queda mínima (x ATR)", Group = "Entrada", DefaultValue = 1.5, MinValue = 0.8, MaxValue = 8)]
+        [Parameter("Queda mínima (x ATR)", Group = "Entrada", DefaultValue = 0.8, MinValue = 0.3, MaxValue = 8)]
         public double DropAtr { get; set; }
         [Parameter("RSI período", Group = "Entrada", DefaultValue = 14, MinValue = 2)]
         public int RsiPeriod { get; set; }
-        [Parameter("RSI sobrevendido", Group = "Entrada", DefaultValue = 45, MinValue = 15, MaxValue = 50)]
+        [Parameter("RSI sobrevendido", Group = "Entrada", DefaultValue = 50, MinValue = 15, MaxValue = 60)]
         public double RsiLow { get; set; }
         [Parameter("Hora inicial UTC", Group = "Filtro", DefaultValue = 7, MinValue = 0, MaxValue = 23)]
         public int StartHour { get; set; }
