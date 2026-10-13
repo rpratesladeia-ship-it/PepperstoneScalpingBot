@@ -116,48 +116,73 @@ namespace cAlgo.Robots
         {
             if (c.Bars.Count < Math.Max(DropBars, AtrPeriod) + 6 || c.H1.Count < SlowEma + 5) return;
             if (Positions.FindAll(BotLabel, name).Length > 0) return;
-            double atr = c.Atr.Result.Last(1);
-            if (atr <= 0 || c.Fast.Result.Last(1) <= c.Slow.Result.Last(1)) return;
 
-            double highest = double.MinValue, lowest = double.MaxValue, minRsi = 100;
+            double atr = c.Atr.Result.Last(1);
+            if (atr <= 0) return;
+            bool upTrend = c.Fast.Result.Last(1) > c.Slow.Result.Last(1);
+            bool downTrend = c.Fast.Result.Last(1) < c.Slow.Result.Last(1);
+            if (!upTrend && !downTrend) return;
+
+            double highest = double.MinValue, lowest = double.MaxValue;
+            double minRsi = 100, maxRsi = 0;
             int highIndex = 0, lowIndex = 0;
             for (int i = 1; i <= DropBars; i++)
             {
                 if (c.Bars.HighPrices.Last(i) > highest) { highest = c.Bars.HighPrices.Last(i); highIndex = i; }
                 if (c.Bars.LowPrices.Last(i) < lowest) { lowest = c.Bars.LowPrices.Last(i); lowIndex = i; }
             }
-            for (int i = 1; i <= 5; i++) minRsi = Math.Min(minRsi, c.Rsi.Result.Last(i));
-            if (!(highIndex > lowIndex && lowIndex <= 5 && highest - lowest >= DropAtr * atr && minRsi <= RsiLow)) return;
+            for (int i = 1; i <= 5; i++)
+            {
+                minRsi = Math.Min(minRsi, c.Rsi.Result.Last(i));
+                maxRsi = Math.Max(maxRsi, c.Rsi.Result.Last(i));
+            }
 
             double open = c.Bars.OpenPrices.Last(1), close = c.Bars.ClosePrices.Last(1);
-            if (!(close > open && close > c.Bars.ClosePrices.Last(2) && c.Rsi.Result.Last(1) > c.Rsi.Result.Last(2))) return;
-            if (lowest < c.Slow.Result.Last(1)) return;
+            double previousClose = c.Bars.ClosePrices.Last(2);
+            bool buySignal = upTrend &&
+                highIndex > lowIndex && lowIndex <= 5 &&
+                highest - lowest >= DropAtr * atr && minRsi <= RsiLow &&
+                close > open && close > previousClose &&
+                c.Rsi.Result.Last(1) > c.Rsi.Result.Last(2) &&
+                lowest >= c.Slow.Result.Last(1);
+
+            bool sellSignal = downTrend &&
+                lowIndex > highIndex && highIndex <= 5 &&
+                highest - lowest >= DropAtr * atr && maxRsi >= (100 - RsiLow) &&
+                close < open && close < previousClose &&
+                c.Rsi.Result.Last(1) < c.Rsi.Result.Last(2) &&
+                highest <= c.Slow.Result.Last(1);
+
+            if (!buySignal && !sellSignal) return;
 
             Symbol s = c.Symbol;
+            TradeType tradeType = buySignal ? TradeType.Buy : TradeType.Sell;
             double atrPips = atr / s.PipSize;
-            double stopPips = (s.Ask - (lowest - StopBufferAtr * atr)) / s.PipSize;
-            if (stopPips > atrPips * MaxStopAtr) return;
+            double stopPrice = buySignal ? lowest - StopBufferAtr * atr : highest + StopBufferAtr * atr;
+            double stopPips = buySignal ? (s.Ask - stopPrice) / s.PipSize : (stopPrice - s.Bid) / s.PipSize;
+            if (stopPips <= 0 || stopPips > atrPips * MaxStopAtr) return;
             stopPips = Math.Max(stopPips, atrPips * MinStopAtr);
             double spreadPips = s.Spread / s.PipSize;
             if (spreadPips > stopPips * MaxSpreadToStop) return;
             double tpPips = stopPips * RewardRisk;
 
-            // Calcula o volume pelo risco percentual e limita a ordem a MaxLotsPerTrade.
             double volume = s.VolumeForProportionalRisk(ProportionalAmountType.Equity, RiskPercent, stopPips, RoundingMode.Down);
             double maxVolume = s.QuantityToVolumeInUnits(MaxLotsPerTrade);
             volume = s.NormalizeVolumeInUnits(Math.Min(volume, maxVolume), RoundingMode.Down);
             if (double.IsNaN(volume) || double.IsInfinity(volume) || volume < s.VolumeInUnitsMin)
             {
-                Print("[{0}] Sinal ignorado: volume seguro abaixo do mínimo da corretora.", name);
+                Print("[{0}] Sinal {1} ignorado: volume seguro abaixo do mínimo da corretora.", name, tradeType);
                 return;
             }
-            var result = ExecuteMarketOrder(TradeType.Buy, name, volume, BotLabel, stopPips, tpPips);
+
+            var result = ExecuteMarketOrder(tradeType, name, volume, BotLabel, stopPips, tpPips);
             if (result.IsSuccessful)
             {
                 tradesToday++;
-                Print("[{0}] COMPRA aberta | volume {1} unidades | SL {2:F1} pips | TP {3:F1} pips", name, volume, stopPips, tpPips);
+                Print("[{0}] {1} aberta | volume {2} unidades | SL {3:F1} pips | TP {4:F1} pips",
+                    name, tradeType == TradeType.Buy ? "COMPRA" : "VENDA", volume, stopPips, tpPips);
             }
-            else Print("[{0}] Ordem rejeitada: {1}", name, result.Error);
+            else Print("[{0}] Ordem {1} rejeitada: {2}", name, tradeType, result.Error);
         }
 
         private int CountPositions() { return Positions.FindAll(BotLabel).Length; }
@@ -171,14 +196,26 @@ namespace cAlgo.Robots
                 double atr = c.Atr.Result.Last(1);
                 if (atr <= 0) continue;
                 if ((Server.Time - p.EntryTime).TotalHours >= MaxHoldHours) { ClosePosition(p); continue; }
-                if (p.Pips >= (atr / c.Symbol.PipSize) * TrailStartAtr)
+
+                if (p.Pips < (atr / c.Symbol.PipSize) * TrailStartAtr) continue;
+
+                double stop;
+                bool shouldMove;
+                if (p.TradeType == TradeType.Buy)
                 {
-                    double stop = Math.Max(c.Symbol.Bid - TrailDistanceAtr * atr, p.EntryPrice + c.Symbol.PipSize * 0.5);
-                    if (p.StopLoss == null || stop > p.StopLoss.Value + c.Symbol.PipSize * 0.2)
-                    {
-                        var modify = ModifyPosition(p, stop, p.TakeProfit);
-                        if (!modify.IsSuccessful) Print("[{0}] Falha ao ajustar trailing: {1}", p.SymbolName, modify.Error);
-                    }
+                    stop = c.Symbol.Bid - TrailDistanceAtr * atr;
+                    shouldMove = p.StopLoss == null || stop > p.StopLoss.Value + c.Symbol.PipSize * 0.2;
+                }
+                else
+                {
+                    stop = c.Symbol.Ask + TrailDistanceAtr * atr;
+                    shouldMove = p.StopLoss == null || stop < p.StopLoss.Value - c.Symbol.PipSize * 0.2;
+                }
+
+                if (shouldMove)
+                {
+                    var modify = ModifyPosition(p, stop, p.TakeProfit);
+                    if (!modify.IsSuccessful) Print("[{0}] Falha ao ajustar trailing: {1}", p.SymbolName, modify.Error);
                 }
             }
         }
