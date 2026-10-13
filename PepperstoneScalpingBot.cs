@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using cAlgo.API;
 using cAlgo.API.Indicators;
+using cAlgo.API.Internals;
 
 namespace cAlgo.Robots
 {
