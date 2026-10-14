@@ -46,3 +46,4 @@ jobs:
           name: PepperstoneScalpingBot-algo
           path: '**/*.algo'
           if-no-files-found: error
+# V7 margin-based profit/loss exit build validation.
