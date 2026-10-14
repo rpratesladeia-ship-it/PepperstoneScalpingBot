@@ -1,4 +1,4 @@
-// V5 - Multiativos: compra em correção dentro de tendência de alta.
+// V6 DEMO - multiativos, análise M5, varredura por timer e diagnóstico de filtros.
 // Instale em um gráfico M15. Use DEMO e faça backtest antes de operar ao vivo.
 using System;
 using System.Collections.Generic;
@@ -11,11 +11,11 @@ namespace cAlgo.Robots
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class PepperstoneScalpingBot : Robot
     {
-        [Parameter("Ativos separados por vírgula", Group = "Ativos", DefaultValue = "GBPUSD,EURUSD,AUDUSD,NZDUSD,XAUUSD")]
+        [Parameter("Ativos separados por vírgula", Group = "Ativos", DefaultValue = "GBPUSD,EURUSD,AUDUSD,NZDUSD,XAUUSD,US30,US500,UK100,BTCUSD")]
         public string SymbolList { get; set; }
         [Parameter("Máx. posições abertas", Group = "Risco", DefaultValue = 3, MinValue = 1, MaxValue = 10)]
         public int MaxOpenPositions { get; set; }
-        [Parameter("Risco por operação (%)", Group = "Risco", DefaultValue = 0.25, MinValue = 0.05, MaxValue = 1.0)]
+        [Parameter("Risco por operação (%)", Group = "Risco", DefaultValue = 0.05, MinValue = 0.01, MaxValue = 1.0)]
         public double RiskPercent { get; set; }
         [Parameter("Perda diária máxima (%)", Group = "Risco", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 5.0)]
         public double DailyLossLimitPercent { get; set; }
@@ -23,25 +23,25 @@ namespace cAlgo.Robots
         public int MaxTradesPerDay { get; set; }
         [Parameter("Máx. perdas seguidas", Group = "Risco", DefaultValue = 2, MinValue = 1, MaxValue = 8)]
         public int MaxConsecutiveLosses { get; set; }
-        [Parameter("Teto por ordem (lotes)", Group = "Risco", DefaultValue = 0.10, MinValue = 0.01, MaxValue = 1.0)]
+        [Parameter("Teto por ordem (lotes)", Group = "Risco", DefaultValue = 0.01, MinValue = 0.01, MaxValue = 1.0)]
         public double MaxLotsPerTrade { get; set; }
         [Parameter("EMA H1 curta", Group = "Tendência", DefaultValue = 50, MinValue = 10)]
         public int FastEma { get; set; }
         [Parameter("EMA H1 longa", Group = "Tendência", DefaultValue = 200, MinValue = 50)]
         public int SlowEma { get; set; }
-        [Parameter("Janela de queda (candles)", Group = "Entrada", DefaultValue = 8, MinValue = 3, MaxValue = 40)]
+        [Parameter("Janela de queda (candles)", Group = "Entrada", DefaultValue = 6, MinValue = 3, MaxValue = 40)]
         public int DropBars { get; set; }
-        [Parameter("Queda mínima (x ATR)", Group = "Entrada", DefaultValue = 0.8, MinValue = 0.3, MaxValue = 8)]
+        [Parameter("Queda mínima (x ATR)", Group = "Entrada", DefaultValue = 0.5, MinValue = 0.2, MaxValue = 8)]
         public double DropAtr { get; set; }
         [Parameter("RSI período", Group = "Entrada", DefaultValue = 14, MinValue = 2)]
         public int RsiPeriod { get; set; }
-        [Parameter("RSI sobrevendido", Group = "Entrada", DefaultValue = 50, MinValue = 15, MaxValue = 60)]
+        [Parameter("RSI sobrevendido", Group = "Entrada", DefaultValue = 55, MinValue = 15, MaxValue = 65)]
         public double RsiLow { get; set; }
-        [Parameter("Hora inicial UTC", Group = "Filtro", DefaultValue = 7, MinValue = 0, MaxValue = 23)]
+        [Parameter("Hora inicial UTC", Group = "Filtro", DefaultValue = 0, MinValue = 0, MaxValue = 23)]
         public int StartHour { get; set; }
-        [Parameter("Hora final UTC", Group = "Filtro", DefaultValue = 20, MinValue = 1, MaxValue = 24)]
+        [Parameter("Hora final UTC", Group = "Filtro", DefaultValue = 24, MinValue = 1, MaxValue = 24)]
         public int EndHour { get; set; }
-        [Parameter("Spread máximo / stop", Group = "Filtro", DefaultValue = 0.10, MinValue = 0.02, MaxValue = 0.5)]
+        [Parameter("Spread máximo / stop", Group = "Filtro", DefaultValue = 0.25, MinValue = 0.02, MaxValue = 0.75)]
         public double MaxSpreadToStop { get; set; }
         [Parameter("ATR período", Group = "Saída", DefaultValue = 14, MinValue = 2)]
         public int AtrPeriod { get; set; }
@@ -69,6 +69,7 @@ namespace cAlgo.Robots
             public ExponentialMovingAverage Fast, Slow;
             public RelativeStrengthIndex Rsi;
             public AverageTrueRange Atr;
+            public DateTime LastScannedBarTime;
         }
         private readonly Dictionary<string, Ctx> assets = new Dictionary<string, Ctx>();
         private DateTime day;
@@ -84,7 +85,7 @@ namespace cAlgo.Robots
                 if (assets.ContainsKey(name)) continue;
                 Symbol sym = Symbols.GetSymbol(name);
                 if (sym == null) { Print("Ativo não encontrado e ignorado: {0}", name); continue; }
-                var c = new Ctx { Symbol = sym, Bars = MarketData.GetBars(TimeFrame, name), H1 = MarketData.GetBars(TimeFrame.Hour, name) };
+                var c = new Ctx { Symbol = sym, Bars = MarketData.GetBars(TimeFrame.Minute5, name), H1 = MarketData.GetBars(TimeFrame.Hour, name) };
                 c.Fast = Indicators.ExponentialMovingAverage(c.H1.ClosePrices, FastEma);
                 c.Slow = Indicators.ExponentialMovingAverage(c.H1.ClosePrices, SlowEma);
                 c.Rsi = Indicators.RelativeStrengthIndex(c.Bars.ClosePrices, RsiPeriod);
@@ -93,15 +94,22 @@ namespace cAlgo.Robots
             }
             day = Server.Time.Date; dayStartEquity = Account.Equity;
             Positions.Closed += OnPositionClosed;
-            Print("V5 multiativos iniciado: {0} ativos carregados. Use somente DEMO.", assets.Count);
+            Timer.Start(TimeSpan.FromSeconds(15));
+            Print("V6 DEMO iniciado: {0} ativos carregados; sinal M5; varredura a cada 15s. Risco {1:F2}%, teto {2:F2} lote, máximo {3} posições.", assets.Count, RiskPercent, MaxLotsPerTrade, MaxOpenPositions);
+            foreach (var kv in assets) Print("Ativo carregado: {0} | mínimo {1} unidades | passo {2} | spread atual {3:F1} pips", kv.Key, kv.Value.Symbol.VolumeInUnitsMin, kv.Value.Symbol.VolumeInUnitsStep, kv.Value.Symbol.Spread / kv.Value.Symbol.PipSize);
         }
 
-        protected override void OnBar()
+        protected override void OnTimer()
         {
             ResetDay();
             ManagePositions();
             if (dailyStopped || DailyLossLimitReached()) return;
-            if (tradesToday >= MaxTradesPerDay || lossesInRow >= MaxConsecutiveLosses) return;
+            if (tradesToday >= MaxTradesPerDay) return;
+            if (lossesInRow >= MaxConsecutiveLosses)
+            {
+                Print("Entradas suspensas: limite de perdas consecutivas ({0}) atingido.", MaxConsecutiveLosses);
+                return;
+            }
             int hour = Server.TimeInUtc.Hour;
             if (hour < StartHour || hour >= EndHour) return;
 
@@ -114,14 +122,21 @@ namespace cAlgo.Robots
 
         private void Scan(string name, Ctx c)
         {
-            if (c.Bars.Count < Math.Max(DropBars, AtrPeriod) + 6 || c.H1.Count < SlowEma + 5) return;
+            if (c.Bars.Count < Math.Max(DropBars, AtrPeriod) + 6 || c.H1.Count < SlowEma + 5)
+            {
+                Print("[{0}] Aguardando histórico suficiente: M5={1}, H1={2}/{3}.", name, c.Bars.Count, c.H1.Count, SlowEma + 5);
+                return;
+            }
+            DateTime closedBarTime = c.Bars.OpenTimes.Last(1);
+            if (c.LastScannedBarTime == closedBarTime) return;
+            c.LastScannedBarTime = closedBarTime;
             if (Positions.FindAll(BotLabel, name).Length > 0) return;
 
             double atr = c.Atr.Result.Last(1);
             if (atr <= 0) return;
             bool upTrend = c.Fast.Result.Last(1) > c.Slow.Result.Last(1);
             bool downTrend = c.Fast.Result.Last(1) < c.Slow.Result.Last(1);
-            if (!upTrend && !downTrend) return;
+            if (!upTrend && !downTrend) { Print("[{0}] Sem tendência definida; sinal ignorado.", name); return; }
 
             double highest = double.MinValue, lowest = double.MaxValue;
             double minRsi = 100, maxRsi = 0;
@@ -144,26 +159,26 @@ namespace cAlgo.Robots
                 highest - lowest >= DropAtr * atr && minRsi <= RsiLow &&
                 close > open && close > previousClose &&
                 c.Rsi.Result.Last(1) > c.Rsi.Result.Last(2) &&
-                lowest >= c.Slow.Result.Last(1);
+                close >= c.Slow.Result.Last(1);
 
             bool sellSignal = downTrend &&
                 lowIndex > highIndex && highIndex <= 5 &&
                 highest - lowest >= DropAtr * atr && maxRsi >= (100 - RsiLow) &&
                 close < open && close < previousClose &&
                 c.Rsi.Result.Last(1) < c.Rsi.Result.Last(2) &&
-                highest <= c.Slow.Result.Last(1);
+                close <= c.Slow.Result.Last(1);
 
-            if (!buySignal && !sellSignal) return;
+            if (!buySignal && !sellSignal) { Print("[{0}] Sem sinal nesta vela M5 | tendência={1} | RSI={2:F1} | spread={3:F1} pips.", name, upTrend ? "ALTA" : "BAIXA", c.Rsi.Result.Last(1), c.Symbol.Spread / c.Symbol.PipSize); return; }
 
             Symbol s = c.Symbol;
             TradeType tradeType = buySignal ? TradeType.Buy : TradeType.Sell;
             double atrPips = atr / s.PipSize;
             double stopPrice = buySignal ? lowest - StopBufferAtr * atr : highest + StopBufferAtr * atr;
             double stopPips = buySignal ? (s.Ask - stopPrice) / s.PipSize : (stopPrice - s.Bid) / s.PipSize;
-            if (stopPips <= 0 || stopPips > atrPips * MaxStopAtr) return;
+            if (stopPips <= 0 || stopPips > atrPips * MaxStopAtr) { Print("[{0}] Sinal {1} recusado: stop inválido/fora do limite ({2:F1} pips).", name, tradeType, stopPips); return; }
             stopPips = Math.Max(stopPips, atrPips * MinStopAtr);
             double spreadPips = s.Spread / s.PipSize;
-            if (spreadPips > stopPips * MaxSpreadToStop) return;
+            if (spreadPips > stopPips * MaxSpreadToStop) { Print("[{0}] Sinal {1} recusado pelo spread: {2:F1} pips; limite {3:F1}.", name, tradeType, spreadPips, stopPips * MaxSpreadToStop); return; }
             double tpPips = stopPips * RewardRisk;
 
             double volume = s.VolumeForProportionalRisk(ProportionalAmountType.Equity, RiskPercent, stopPips, RoundingMode.Down);
@@ -171,7 +186,7 @@ namespace cAlgo.Robots
             volume = s.NormalizeVolumeInUnits(Math.Min(volume, maxVolume), RoundingMode.Down);
             if (double.IsNaN(volume) || double.IsInfinity(volume) || volume < s.VolumeInUnitsMin)
             {
-                Print("[{0}] Sinal {1} ignorado: volume seguro abaixo do mínimo da corretora.", name, tradeType);
+                Print("[{0}] Sinal {1} ignorado: volume calculado {2:F2} abaixo do mínimo {3:F2} unidades; confira risco, stop e especificação do ativo.", name, tradeType, volume, s.VolumeInUnitsMin);
                 return;
             }
 
