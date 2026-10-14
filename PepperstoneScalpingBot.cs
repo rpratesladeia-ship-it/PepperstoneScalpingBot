@@ -1,4 +1,4 @@
-// V6 DEMO - multiativos, análise M5, varredura por timer e diagnóstico de filtros.
+// V7 DEMO - multiativos M5, diagnóstico e saídas por lucro/prejuízo relativos à margem.
 // Instale em um gráfico M15. Use DEMO e faça backtest antes de operar ao vivo.
 using System;
 using System.Collections.Generic;
@@ -25,6 +25,10 @@ namespace cAlgo.Robots
         public int MaxConsecutiveLosses { get; set; }
         [Parameter("Teto por ordem (lotes)", Group = "Risco", DefaultValue = 0.01, MinValue = 0.01, MaxValue = 1.0)]
         public double MaxLotsPerTrade { get; set; }
+        [Parameter("Fechar com lucro (% da margem)", Group = "Saída por margem", DefaultValue = 70, MinValue = 1, MaxValue = 500)]
+        public double MarginProfitTargetPercent { get; set; }
+        [Parameter("Fechar com perda (% da margem)", Group = "Saída por margem", DefaultValue = 30, MinValue = 1, MaxValue = 100)]
+        public double MarginLossLimitPercent { get; set; }
         [Parameter("EMA H1 curta", Group = "Tendência", DefaultValue = 50, MinValue = 10)]
         public int FastEma { get; set; }
         [Parameter("EMA H1 longa", Group = "Tendência", DefaultValue = 200, MinValue = 50)]
@@ -95,7 +99,7 @@ namespace cAlgo.Robots
             day = Server.Time.Date; dayStartEquity = Account.Equity;
             Positions.Closed += OnPositionClosed;
             Timer.Start(TimeSpan.FromSeconds(15));
-            Print("V6 DEMO iniciado: {0} ativos carregados; sinal M5; varredura a cada 15s. Risco {1:F2}%, teto {2:F2} lote, máximo {3} posições.", assets.Count, RiskPercent, MaxLotsPerTrade, MaxOpenPositions);
+            Print("V7 DEMO iniciado: {0} ativos; sinal M5; varredura 15s; risco {1:F2}%; teto {2:F2} lote; saída +{3:F0}% / -{4:F0}% da margem.", assets.Count, RiskPercent, MaxLotsPerTrade, MarginProfitTargetPercent, MarginLossLimitPercent);
             foreach (var kv in assets) Print("Ativo carregado: {0} | mínimo {1} unidades | passo {2} | spread atual {3:F1} pips", kv.Key, kv.Value.Symbol.VolumeInUnitsMin, kv.Value.Symbol.VolumeInUnitsStep, kv.Value.Symbol.Spread / kv.Value.Symbol.PipSize);
         }
 
@@ -206,6 +210,28 @@ namespace cAlgo.Robots
         {
             foreach (var p in Positions.FindAll(BotLabel))
             {
+                // Usa somente posições abertas por este cBot. O P&L e a margem são
+                // expressos na moeda da conta; a margem é capturada do estado atual.
+                double margin = p.Margin;
+                if (margin > 0)
+                {
+                    double profitTrigger = margin * MarginProfitTargetPercent / 100.0;
+                    double lossLimit = margin * MarginLossLimitPercent / 100.0;
+                    if (p.NetProfit >= profitTrigger)
+                    {
+                        var closeProfit = ClosePosition(p);
+                        Print("[{0}] Meta de lucro por margem atingida: P&L líquido {1:F2}, margem {2:F2}, alvo {3:F2} ({4:F0}%). Fechamento {5}.",
+                            p.SymbolName, p.NetProfit, margin, profitTrigger, MarginProfitTargetPercent, closeProfit.IsSuccessful ? "solicitado" : "FALHOU: " + closeProfit.Error);
+                        continue;
+                    }
+                    if (p.NetProfit <= -lossLimit)
+                    {
+                        var closeLoss = ClosePosition(p);
+                        Print("[{0}] Limite de perda por margem atingido: P&L líquido {1:F2}, margem {2:F2}, limite -{3:F2} (-{4:F0}%). Fechamento {5}.",
+                            p.SymbolName, p.NetProfit, margin, lossLimit, MarginLossLimitPercent, closeLoss.IsSuccessful ? "solicitado" : "FALHOU: " + closeLoss.Error);
+                        continue;
+                    }
+                }
                 Ctx c;
                 if (!assets.TryGetValue(p.SymbolName, out c)) continue;
                 double atr = c.Atr.Result.Last(1);
