@@ -1,5 +1,5 @@
 // PepperstoneScalpingBot.cs
-// Scanner multiativos experimental para cTrader Automate.
+// V8: scanner multiativos com capital virtual e limites adicionais de risco.
 // Testar somente em conta DEMO; compilação não substitui backtest e validação de risco.
 
 using System;
@@ -11,7 +11,7 @@ using cAlgo.API.Internals;
 namespace cAlgo.Robots
 {
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class PepperstoneScalpingBot : Robot
+    public class PepperstoneScalpingBotV8 : Robot
     {
         [Parameter("Símbolos (separados por vírgula)", DefaultValue = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD")]
         public string SymbolsToScan { get; set; }
@@ -22,13 +22,22 @@ namespace cAlgo.Robots
         [Parameter("Intervalo de varredura (segundos)", DefaultValue = 15, MinValue = 5, MaxValue = 300)]
         public int ScanIntervalSeconds { get; set; }
 
-        [Parameter("Máximo de posições simultâneas", DefaultValue = 3, MinValue = 1, MaxValue = 10)]
+        [Parameter("Capital virtual (moeda da conta)", DefaultValue = 19.80, MinValue = 1.0)]
+        public double VirtualStartingCapital { get; set; }
+
+        [Parameter("Máximo de posições simultâneas", DefaultValue = 2, MinValue = 1, MaxValue = 10)]
         public int MaxOpenPositions { get; set; }
+
+        [Parameter("Máximo de entradas por dia", DefaultValue = 5, MinValue = 1, MaxValue = 100)]
+        public int MaxEntriesPerDay { get; set; }
+
+        [Parameter("Máximo de perdas consecutivas", DefaultValue = 3, MinValue = 1, MaxValue = 20)]
+        public int MaxConsecutiveLosses { get; set; }
 
         [Parameter("Risco por operação (%)", DefaultValue = 0.5, MinValue = 0.1, MaxValue = 1.0)]
         public double RiskPercent { get; set; }
 
-        [Parameter("Limite máximo por ordem (lotes)", DefaultValue = 0.10, MinValue = 0.01, MaxValue = 1.0)]
+        [Parameter("Limite máximo por ordem (lotes)", DefaultValue = 0.01, MinValue = 0.01, MaxValue = 1.0)]
         public double MaxLotsPerTrade { get; set; }
 
         [Parameter("Limite de perda diária (%)", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 2.0)]
@@ -83,7 +92,10 @@ namespace cAlgo.Robots
 
         private readonly Dictionary<string, SymbolState> _states = new Dictionary<string, SymbolState>(StringComparer.OrdinalIgnoreCase);
         private DateTime _day;
-        private double _dayStartEquity;
+        private double _virtualEquity;
+        private double _dayStartVirtualEquity;
+        private int _entriesToday;
+        private int _consecutiveLosses;
         private bool _dailyStopTriggered;
 
         protected override void OnStart()
@@ -138,13 +150,24 @@ namespace cAlgo.Robots
                 return;
             }
 
+            if (!string.Equals(Account.Asset.Name, "USD", StringComparison.OrdinalIgnoreCase))
+            {
+                Print("ERRO: capital virtual 19,80 foi definido em USD; a moeda da conta é {0}. Para evitar cálculo incorreto, o cBot será parado.", Account.Asset.Name);
+                Stop();
+                return;
+            }
+
             _day = Server.Time.Date;
-            _dayStartEquity = Account.Equity;
+            _virtualEquity = VirtualStartingCapital;
+            _dayStartVirtualEquity = _virtualEquity;
+            _entriesToday = 0;
+            _consecutiveLosses = 0;
             _dailyStopTriggered = false;
+            Positions.Closed += OnPositionClosed;
             Timer.Start(ScanIntervalSeconds);
-            Print("Scanner multiativos iniciado: {0} símbolos; máximo {1} posições; risco {2:F2}% por operação. Confirme que a conta é DEMO.",
-                _states.Count, MaxOpenPositions, RiskPercent);
-            Print("O limite diário bloqueia novas entradas, mas não fecha posições abertas nem garante perda máxima.");
+            Print("V8 iniciado em modo DEMO: {0} símbolos; capital virtual US${1:F2}; risco {2:F2}%; até {3} posições, {4} entradas/dia, {5} perdas seguidas; teto {6:F2} lote.",
+                _states.Count, _virtualEquity, RiskPercent, MaxOpenPositions, MaxEntriesPerDay, MaxConsecutiveLosses, MaxLotsPerTrade);
+            Print("ATENÇÃO: capital virtual só controla dimensionamento e limites internos; margem, execução e P&L da corretora continuam ligados à conta demo real.");
         }
 
         protected override void OnTimer()
@@ -152,6 +175,18 @@ namespace cAlgo.Robots
             ResetDailyGuardIfNeeded();
             if (_dailyStopTriggered || DailyLossLimitReached())
                 return;
+
+            if (_entriesToday >= MaxEntriesPerDay)
+            {
+                Print("LIMITE DE ENTRADAS: {0}/{1}. Novas entradas bloqueadas até o próximo dia.", _entriesToday, MaxEntriesPerDay);
+                return;
+            }
+
+            if (_consecutiveLosses >= MaxConsecutiveLosses)
+            {
+                Print("LIMITE DE PERDAS CONSECUTIVAS: {0}. Novas entradas bloqueadas até o próximo dia.", _consecutiveLosses);
+                return;
+            }
 
             foreach (KeyValuePair<string, SymbolState> pair in _states)
             {
@@ -215,8 +250,15 @@ namespace cAlgo.Robots
         {
             // API oficial calcula o volume diretamente em unidades para o risco percentual.
             // Não converter o volume retornado novamente de lotes para unidades.
-            double unitsByRisk = symbol.VolumeForProportionalRisk(
-                ProportionalAmountType.Equity, RiskPercent, stopLossPips, RoundingMode.Down);
+            double virtualRiskMoney = _virtualEquity * (RiskPercent / 100.0);
+            if (virtualRiskMoney <= 0 || stopLossPips <= 0)
+            {
+                Print("{0}: risco monetário ou stop inválido; ordem cancelada.", symbolName);
+                return;
+            }
+
+            // O risco monetário é calculado na moeda da conta; a verificação USD impede conversão incorreta.
+            double unitsByRisk = symbol.VolumeForFixedRisk(virtualRiskMoney, stopLossPips, RoundingMode.Down);
             double maxUnits = symbol.QuantityToVolumeInUnits(MaxLotsPerTrade);
             if (double.IsNaN(unitsByRisk) || double.IsInfinity(unitsByRisk) || unitsByRisk <= 0 ||
                 double.IsNaN(maxUnits) || double.IsInfinity(maxUnits) || maxUnits <= 0)
@@ -240,8 +282,11 @@ namespace cAlgo.Robots
 
             var result = ExecuteMarketOrder(tradeType, symbolName, volume, BotLabel, stopLossPips, takeProfitPips);
             if (result.IsSuccessful)
-                Print("{0}: ordem {1} aberta. Volume={2} unidades ({3:F2} lotes), SL={4:F1} pips, TP={5:F1} pips, RSI={6:F1}.",
-                    symbolName, tradeType, volume, symbol.VolumeInUnitsToQuantity(volume), stopLossPips, takeProfitPips, _states[symbolName].Rsi.Result.Last(1));
+            {
+                _entriesToday++;
+                Print("{0}: ordem {1} aberta. Volume={2} unidades ({3:F3} lotes), risco virtual alvo=${4:F2}, SL={5:F1} pips, TP={6:F1} pips. Entrada {7}/{8}.",
+                    symbolName, tradeType, volume, symbol.VolumeInUnitsToQuantity(volume), virtualRiskMoney, stopLossPips, takeProfitPips, _entriesToday, MaxEntriesPerDay);
+            }
             else
                 Print("{0}: ordem não executada: {1}", symbolName, result.Error);
         }
@@ -251,11 +296,16 @@ namespace cAlgo.Robots
             if (_dayStartEquity <= 0)
                 return false;
 
-            double lossPercent = ((_dayStartEquity - Account.Equity) / _dayStartEquity) * 100.0;
+            double floatingBotPnl = 0;
+            foreach (Position position in Positions.FindAll(BotLabel))
+                floatingBotPnl += position.NetProfit;
+
+            double virtualCurrentEquity = _virtualEquity + floatingBotPnl;
+            double lossPercent = ((_dayStartVirtualEquity - virtualCurrentEquity) / _dayStartVirtualEquity) * 100.0;
             if (lossPercent >= DailyLossLimitPercent)
             {
                 _dailyStopTriggered = true;
-                Print("LIMITE DIÁRIO ATINGIDO ({0:F2}%). Nenhuma nova entrada será aberta hoje.", lossPercent);
+                Print("LIMITE DIÁRIO VIRTUAL ATINGIDO ({0:F2}%). Capital inicial=${1:F2}; valor atual estimado=${2:F2}. Novas entradas bloqueadas.", lossPercent, _dayStartVirtualEquity, virtualCurrentEquity);
                 return true;
             }
             return false;
@@ -267,13 +317,32 @@ namespace cAlgo.Robots
                 return;
 
             _day = Server.Time.Date;
-            _dayStartEquity = Account.Equity;
+            _dayStartVirtualEquity = _virtualEquity;
+            _entriesToday = 0;
+            _consecutiveLosses = 0;
             _dailyStopTriggered = false;
-            Print("Novo dia. Referência de equity diária reiniciada.");
+            Print("Novo dia. Capital virtual de referência=${0:F2}; contadores diários reiniciados.", _dayStartVirtualEquity);
+        }
+
+        private void OnPositionClosed(PositionClosedEventArgs args)
+        {
+            Position position = args.Position;
+            if (position.Label != BotLabel)
+                return;
+
+            _virtualEquity += position.NetProfit;
+            if (position.NetProfit < 0)
+                _consecutiveLosses++;
+            else if (position.NetProfit > 0)
+                _consecutiveLosses = 0;
+
+            Print("Fechamento {0}: resultado líquido ${1:F2}; capital virtual=${2:F2}; perdas consecutivas={3}.",
+                position.SymbolName, position.NetProfit, _virtualEquity, _consecutiveLosses);
         }
 
         protected override void OnStop()
         {
+            Positions.Closed -= OnPositionClosed;
             Timer.Stop();
             Print("Scanner multiativos parado. Posições abertas não são fechadas automaticamente.");
         }
