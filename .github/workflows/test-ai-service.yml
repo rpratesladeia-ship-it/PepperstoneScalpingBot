@@ -1,0 +1,24 @@
+name: Test OpenAI AI filter bridge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ai-service/**'
+      - '.github/workflows/test-ai-service.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ai-service
+        run: npm install --no-audit --no-fund
+      - name: Run unit tests
+        working-directory: ai-service
+        run: npm test
