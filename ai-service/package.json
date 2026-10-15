@@ -1,0 +1,13 @@
+{
+  "name": "pepperstone-v8-openai-filter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TLS WebSocket bridge from cTrader Cloud to OpenAI Responses API; filter-only, fail-closed.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "ws": "^8.18.0" }
+}
