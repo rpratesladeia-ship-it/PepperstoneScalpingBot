@@ -44,7 +44,7 @@ namespace cAlgo.Robots
         [Parameter("Limite de perda diária (%)", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 2.0)]
         public double DailyLossLimitPercent { get; set; }
 
-        [Parameter("Filtro IA OpenAI ativo", DefaultValue = false)]
+        [Parameter("Filtro IA OpenAI ativo", DefaultValue = true)]
         public bool AiFilterEnabled { get; set; }
 
         [Parameter("Endpoint WebSocket IA (WSS)", DefaultValue = "")]
