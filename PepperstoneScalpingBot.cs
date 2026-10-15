@@ -122,6 +122,7 @@ namespace cAlgo.Robots
         private double _virtualEquity;
         private double _dayStartVirtualEquity;
         private double _dayRealizedPnl;
+        private double _dayStartFloatingPnl;
         private int _entriesToday;
         private int _consecutiveLosses;
         private bool _dailyStopTriggered;
@@ -227,10 +228,18 @@ namespace cAlgo.Robots
                 }
             }
 
+            if (Positions.FindAll(BotLabel).Length > 0)
+            {
+                Print("BLOQUEIO DE CONTABILIDADE: já existem posições com a etiqueta V8. Feche-as e confira o ledger antes de reiniciar a instância; o capital virtual não é restaurado automaticamente na Cloud.");
+                Stop();
+                return;
+            }
+
             _day = Server.Time.Date;
             _virtualEquity = VirtualStartingCapital;
             _dayStartVirtualEquity = _virtualEquity;
             _dayRealizedPnl = 0;
+            _dayStartFloatingPnl = GetFloatingBotPnl();
             _entriesToday = 0;
             _consecutiveLosses = 0;
             _dailyStopTriggered = false;
@@ -498,11 +507,8 @@ namespace cAlgo.Robots
 
             // Daily P&L is realized P&L since the current server-day began plus current
             // floating P&L. This avoids miscounting positions held across midnight.
-            double floatingBotPnl = 0;
-            foreach (Position position in Positions.FindAll(BotLabel))
-                floatingBotPnl += position.NetProfit;
-
-            double dailyPnl = _dayRealizedPnl + floatingBotPnl;
+            double floatingBotPnl = GetFloatingBotPnl();
+            double dailyPnl = _dayRealizedPnl + floatingBotPnl - _dayStartFloatingPnl;
             double lossPercent = (-dailyPnl / _dayStartVirtualEquity) * 100.0;
             if (lossPercent >= DailyLossLimitPercent)
             {
@@ -513,6 +519,14 @@ namespace cAlgo.Robots
             return false;
         }
 
+        private double GetFloatingBotPnl()
+        {
+            double floatingBotPnl = 0;
+            foreach (Position position in Positions.FindAll(BotLabel))
+                floatingBotPnl += position.NetProfit;
+            return floatingBotPnl;
+        }
+
         private void ResetDailyGuardIfNeeded()
         {
             if (Server.Time.Date == _day)
@@ -521,6 +535,7 @@ namespace cAlgo.Robots
             _day = Server.Time.Date;
             _dayStartVirtualEquity = _virtualEquity;
             _dayRealizedPnl = 0;
+            _dayStartFloatingPnl = GetFloatingBotPnl();
             _entriesToday = 0;
             _consecutiveLosses = 0;
             _dailyStopTriggered = false;
