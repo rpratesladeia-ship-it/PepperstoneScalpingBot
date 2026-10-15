@@ -293,7 +293,7 @@ namespace cAlgo.Robots
 
         private bool DailyLossLimitReached()
         {
-            if (_dayStartEquity <= 0)
+            if (_dayStartVirtualEquity <= 0)
                 return false;
 
             double floatingBotPnl = 0;
