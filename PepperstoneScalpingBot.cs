@@ -121,6 +121,7 @@ namespace cAlgo.Robots
         private DateTime _day;
         private double _virtualEquity;
         private double _dayStartVirtualEquity;
+        private double _dayRealizedPnl;
         private int _entriesToday;
         private int _consecutiveLosses;
         private bool _dailyStopTriggered;
@@ -229,6 +230,7 @@ namespace cAlgo.Robots
             _day = Server.Time.Date;
             _virtualEquity = VirtualStartingCapital;
             _dayStartVirtualEquity = _virtualEquity;
+            _dayRealizedPnl = 0;
             _entriesToday = 0;
             _consecutiveLosses = 0;
             _dailyStopTriggered = false;
@@ -494,16 +496,18 @@ namespace cAlgo.Robots
             if (_dayStartVirtualEquity <= 0)
                 return false;
 
+            // Daily P&L is realized P&L since the current server-day began plus current
+            // floating P&L. This avoids miscounting positions held across midnight.
             double floatingBotPnl = 0;
             foreach (Position position in Positions.FindAll(BotLabel))
                 floatingBotPnl += position.NetProfit;
 
-            double virtualCurrentEquity = _virtualEquity + floatingBotPnl;
-            double lossPercent = ((_dayStartVirtualEquity - virtualCurrentEquity) / _dayStartVirtualEquity) * 100.0;
+            double dailyPnl = _dayRealizedPnl + floatingBotPnl;
+            double lossPercent = (-dailyPnl / _dayStartVirtualEquity) * 100.0;
             if (lossPercent >= DailyLossLimitPercent)
             {
                 _dailyStopTriggered = true;
-                Print("LIMITE DIÁRIO VIRTUAL ATINGIDO ({0:F2}%). Capital inicial=${1:F2}; valor atual estimado=${2:F2}. Novas entradas bloqueadas.", lossPercent, _dayStartVirtualEquity, virtualCurrentEquity);
+                Print("LIMITE DIÁRIO VIRTUAL ATINGIDO ({0:F2}%). Capital inicial=${1:F2}; P&L do dia=${2:F2}. Novas entradas bloqueadas.", lossPercent, _dayStartVirtualEquity, dailyPnl);
                 return true;
             }
             return false;
@@ -516,6 +520,7 @@ namespace cAlgo.Robots
 
             _day = Server.Time.Date;
             _dayStartVirtualEquity = _virtualEquity;
+            _dayRealizedPnl = 0;
             _entriesToday = 0;
             _consecutiveLosses = 0;
             _dailyStopTriggered = false;
@@ -532,6 +537,7 @@ namespace cAlgo.Robots
             // Como a conta real é bloqueada e o volume é dimensionado pelo capital virtual, esse P&L
             // é a fonte de resultado do simulador; não usar Account.Balance/Equity como capital virtual.
             _virtualEquity += position.NetProfit;
+            _dayRealizedPnl += position.NetProfit;
             if (_virtualEquity < 0)
                 _virtualEquity = 0;
             if (position.NetProfit < 0)
