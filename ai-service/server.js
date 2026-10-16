@@ -22,7 +22,6 @@ function validateSignal(message) {
       typeof message.symbol !== 'string' || message.symbol.length < 3 || message.symbol.length > 32 ||
       !['buy', 'sell'].includes(message.side) ||
       typeof message.timeframe !== 'string' || message.timeframe.length > 20) return false;
-
   const numeric = ['fastEma', 'slowEma', 'rsi', 'atrPips', 'spreadPips', 'stopLossPips', 'takeProfitPips'];
   return numeric.every((key) => Number.isFinite(message[key])) &&
     message.rsi >= 0 && message.rsi <= 100 &&
@@ -36,9 +35,7 @@ function parseModelDecision(text) {
     if (typeof data.allow !== 'boolean' || !Number.isFinite(data.confidence) ||
         data.confidence < 0 || data.confidence > 1 || typeof data.reason !== 'string') return null;
     return { allow: data.allow, confidence: data.confidence, reason: data.reason.slice(0, 240) };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function extractOutputText(response) {
@@ -58,14 +55,9 @@ async function requestOpenAIFilter(signal, env = process.env, fetchImpl = fetch)
   if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) throw new Error('OpenAI server configuration missing');
   const response = await fetchImpl('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + env.OPENAI_API_KEY,
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Authorization': 'Bearer ' + env.OPENAI_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: env.OPENAI_MODEL,
-      store: false,
-      max_output_tokens: 180,
+      model: env.OPENAI_MODEL, store: false, max_output_tokens: 180,
       instructions: [
         'You are a conservative signal-quality filter for a demo-only trading bot.',
         'Do not choose or change the trade direction, do not create orders, and do not change risk limits.',
@@ -75,16 +67,10 @@ async function requestOpenAIFilter(signal, env = process.env, fetchImpl = fetch)
         'Confidence must be between 0 and 1. This is a filter, not a prediction or guarantee.'
       ].join(' '),
       input: JSON.stringify({
-        symbol: signal.symbol,
-        candidateSide: signal.side,
-        timeframe: signal.timeframe,
-        fastEma: signal.fastEma,
-        slowEma: signal.slowEma,
-        rsi: signal.rsi,
-        atrPips: signal.atrPips,
-        spreadPips: signal.spreadPips,
-        stopLossPips: signal.stopLossPips,
-        takeProfitPips: signal.takeProfitPips
+        symbol: signal.symbol, candidateSide: signal.side, timeframe: signal.timeframe,
+        fastEma: signal.fastEma, slowEma: signal.slowEma, rsi: signal.rsi,
+        atrPips: signal.atrPips, spreadPips: signal.spreadPips,
+        stopLossPips: signal.stopLossPips, takeProfitPips: signal.takeProfitPips
       })
     })
   });
@@ -98,9 +84,7 @@ async function requestOpenAIFilter(signal, env = process.env, fetchImpl = fetch)
 function sendDecision(ws, requestId, decision) {
   if (ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({
-    type: 'decision',
-    requestId,
-    allow: decision.allow === true,
+    type: 'decision', requestId, allow: decision.allow === true,
     confidence: Number.isFinite(decision.confidence) ? decision.confidence : 0,
     reason: String(decision.reason || 'rejected by fail-closed service').slice(0, 240)
   }));
@@ -110,14 +94,15 @@ function startServer(env = process.env) {
   if (!env.AI_CLIENT_TOKEN || !env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
     throw new Error('AI_CLIENT_TOKEN, OPENAI_API_KEY and OPENAI_MODEL are required');
   }
-  // Render terminates public TLS at its edge and forwards traffic to this
-  // private service port over HTTP. External clients must still use wss://.
-  // For self-hosted deployments, keep end-to-end TLS with explicit cert files.
   const onRender = Boolean(env.RENDER_EXTERNAL_HOSTNAME);
   let server;
   if (onRender) {
     server = http.createServer((req, res) => {
-      if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+      // Parse pathname separately so query strings such as utm_source do not cause 404s.
+      let pathname = '/';
+      try { pathname = new URL(req.url, 'http://' + (req.headers.host || 'localhost')).pathname; }
+      catch {}
+      if (req.method === 'GET' && (pathname === '/' || pathname === '/health')) {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify({ status: 'ok', service: 'v8-openai-filter' }));
         return;
@@ -161,7 +146,6 @@ function startServer(env = process.env) {
         const decision = await requestOpenAIFilter(msg, env);
         sendDecision(ws, requestId, decision);
       } catch (error) {
-        // Fail closed: errors never authorize a trade.
         sendDecision(ws, requestId, { allow: false, confidence: 0, reason: 'AI service unavailable; signal rejected' });
         console.error('AI filter request failed:', error.message);
       }
