@@ -313,18 +313,26 @@ namespace cAlgo.Robots
                 return;
             }
 
-            bool bullishCross = fastPrevious <= slowPrevious && fastNow > slowNow;
-            bool bearishCross = fastPrevious >= slowPrevious && fastNow < slowNow;
+            // Estratégia de velas curtas para XAUUSD: direção pela EMA e confirmação
+            // pela última vela fechada. A IA continua sendo o filtro obrigatório do sinal.
+            double candleOpen = state.Bars.OpenPrices.Last(1);
+            double candleClose = state.Bars.ClosePrices.Last(1);
+            double candleBody = Math.Abs(candleClose - candleOpen);
+            bool meaningfulSmallCandle = candleBody >= state.Atr.Result.Last(1) * 0.10;
+            bool bullishSetup = fastNow > slowNow && candleClose > candleOpen && meaningfulSmallCandle;
+            bool bearishSetup = fastNow < slowNow && candleClose < candleOpen && meaningfulSmallCandle;
             double stopLossPips = atrPips * StopAtrMultiplier;
             double takeProfitPips = atrPips * TakeProfitAtrMultiplier;
 
-            if (bullishCross && rsi >= BuyRsiMin && rsi <= BuyRsiMax)
+            if (bullishSetup && rsi >= 45 && rsi <= 75)
                 SubmitSignalToAiOrOpen(symbolName, state.Symbol, TradeType.Buy, stopLossPips, takeProfitPips, fastNow, slowNow, rsi, atrPips, spreadPips);
-            else if (bearishCross && rsi >= SellRsiMin && rsi <= SellRsiMax)
+            else if (bearishSetup && rsi >= 25 && rsi <= 55)
                 SubmitSignalToAiOrOpen(symbolName, state.Symbol, TradeType.Sell, stopLossPips, takeProfitPips, fastNow, slowNow, rsi, atrPips, spreadPips);
             else
-                Print("{0}: sem entrada em {1}; EMA9/EMA21={2:F5}/{3:F5}; RSI={4:F1}; spread={5:F2} pips.",
-                    symbolName, SignalTimeFrame, fastNow, slowNow, rsi, spreadPips);
+                Print("{0}: sem entrada em vela curta; direção EMA={1}; candle={2}; RSI={3:F1}; corpo={4:F5}; ATR={5:F5}; spread={6:F2} pips.",
+                    symbolName, fastNow > slowNow ? "ALTA" : fastNow < slowNow ? "BAIXA" : "LATERAL",
+                    candleClose > candleOpen ? "ALTA" : candleClose < candleOpen ? "BAIXA" : "DOJI",
+                    rsi, candleBody, state.Atr.Result.Last(1), spreadPips);
         }
 
         private void SubmitSignalToAiOrOpen(string symbolName, Symbol symbol, TradeType tradeType,
