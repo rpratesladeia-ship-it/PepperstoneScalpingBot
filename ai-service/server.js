@@ -1,11 +1,12 @@
 'use strict';
 
 const fs = require('node:fs');
+const http = require('node:http');
 const https = require('node:https');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const PORT = Number(process.env.PORT || 25345);
+const PORT = Number(process.env.PORT || 10000);
 const MAX_PER_MINUTE = 30;
 
 function safeTokenEqual(received, expected) {
@@ -109,13 +110,30 @@ function startServer(env = process.env) {
   if (!env.AI_CLIENT_TOKEN || !env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
     throw new Error('AI_CLIENT_TOKEN, OPENAI_API_KEY and OPENAI_MODEL are required');
   }
-  if (!env.TLS_CERT_PATH || !env.TLS_KEY_PATH) {
-    throw new Error('TLS_CERT_PATH and TLS_KEY_PATH are required; plaintext WebSocket is disabled');
+  // Render terminates public TLS at its edge and forwards traffic to this
+  // private service port over HTTP. External clients must still use wss://.
+  // For self-hosted deployments, keep end-to-end TLS with explicit cert files.
+  const onRender = Boolean(env.RENDER_EXTERNAL_HOSTNAME);
+  let server;
+  if (onRender) {
+    server = http.createServer((req, res) => {
+      if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ status: 'ok', service: 'v8-openai-filter' }));
+        return;
+      }
+      res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ error: 'not found' }));
+    });
+  } else {
+    if (!env.TLS_CERT_PATH || !env.TLS_KEY_PATH) {
+      throw new Error('TLS_CERT_PATH and TLS_KEY_PATH are required outside Render; plaintext WebSocket is disabled');
+    }
+    server = https.createServer({
+      cert: fs.readFileSync(env.TLS_CERT_PATH),
+      key: fs.readFileSync(env.TLS_KEY_PATH)
+    });
   }
-  const server = https.createServer({
-    cert: fs.readFileSync(env.TLS_CERT_PATH),
-    key: fs.readFileSync(env.TLS_KEY_PATH)
-  });
   const wss = new WebSocketServer({ server, maxPayload: 8192 });
   wss.on('connection', (ws) => {
     let count = 0;
