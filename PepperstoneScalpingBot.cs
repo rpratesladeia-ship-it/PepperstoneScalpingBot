@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 using cAlgo.API;
 using cAlgo.API.Indicators;
 using cAlgo.API.Internals;
@@ -44,17 +43,8 @@ namespace cAlgo.Robots
         [Parameter("Limite de perda diária (%)", DefaultValue = 2.0, MinValue = 0.5, MaxValue = 2.0)]
         public double DailyLossLimitPercent { get; set; }
 
-        [Parameter("Filtro IA OpenAI ativo", DefaultValue = true)]
-        public bool AiFilterEnabled { get; set; }
-
-        [Parameter("Endpoint WebSocket IA (WSS)", DefaultValue = "")]
-        public string AiWebSocketUri { get; set; }
-
-        [Parameter("Token cliente IA (configurar fora do código)", DefaultValue = "")]
-        public string AiClientToken { get; set; }
-
-        [Parameter("Confiança mínima da IA", DefaultValue = 0.70, MinValue = 0.50, MaxValue = 1.0)]
-        public double AiMinConfidence { get; set; }
+        [Parameter("Filtro técnico local EMA/RSI ativo", DefaultValue = true)]
+        public bool LocalFilterEnabled { get; set; }
 
         [Parameter("EMA rápida", DefaultValue = 5, MinValue = 2)]
         public int FastEmaPeriod { get; set; }
@@ -103,21 +93,7 @@ namespace cAlgo.Robots
             public DateTime LastProcessedBar;
         }
 
-        private sealed class PendingSignal
-        {
-            public string RequestId;
-            public string SymbolName;
-            public Symbol Symbol;
-            public TradeType TradeType;
-            public double StopLossPips;
-            public double TakeProfitPips;
-            public DateTime CreatedAt;
-        }
-
         private readonly Dictionary<string, SymbolState> _states = new Dictionary<string, SymbolState>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, PendingSignal> _pendingAiRequests = new Dictionary<string, PendingSignal>(StringComparer.Ordinal);
-        private WebSocketClient _aiClient;
-        private bool _aiConnected;
         private DateTime _day;
         private double _virtualEquity;
         private double _dayStartVirtualEquity;
@@ -131,7 +107,7 @@ namespace cAlgo.Robots
         {
             if (Account.IsLive)
             {
-                Print("BLOQUEIO DE SEGURANÇA: V8 AI só pode iniciar em conta DEMO. Nenhuma operação será enviada.");
+                Print("BLOQUEIO DE SEGURANÇA: V8 Cloud Local só pode iniciar em conta DEMO. Nenhuma operação será enviada.");
                 Stop();
                 return;
             }
@@ -193,40 +169,7 @@ namespace cAlgo.Robots
                 return;
             }
 
-            if (AiFilterEnabled)
-            {
-                if (string.IsNullOrWhiteSpace(AiWebSocketUri) ||
-                    string.IsNullOrWhiteSpace(AiClientToken) ||
-                    !AiWebSocketUri.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
-                {
-                    Print("BLOQUEIO IA: informe endpoint WSS e token cliente nas configurações da instância. Filtro IA permanece sem operar.");
-                    Stop();
-                    return;
-                }
-
-                try
-                {
-                    _aiClient = new WebSocketClient();
-                    _aiClient.Connected += args =>
-                    {
-                        _aiConnected = true;
-                        Print("Conexão com o serviço intermediário de IA estabelecida.");
-                    };
-                    _aiClient.Disconnected += args =>
-                    {
-                        _aiConnected = false;
-                        Print("Serviço de IA desconectado. Novas entradas serão bloqueadas até reconectar.");
-                    };
-                    _aiClient.TextReceived += args => HandleAiMessage(args.Text);
-                    _aiClient.Connect(new Uri(AiWebSocketUri));
-                }
-                catch (Exception ex)
-                {
-                    Print("Falha ao iniciar conexão IA: {0}. O filtro IA falhará fechado.", ex.Message);
-                    Stop();
-                    return;
-                }
-            }
+            Print("Filtro técnico local EMA/RSI ativo; sem conexão externa de IA, compatível com cTrader Cloud.");
 
             if (Positions.FindAll(BotLabel).Length > 0)
             {
@@ -245,7 +188,7 @@ namespace cAlgo.Robots
             _dailyStopTriggered = false;
             Positions.Closed += OnPositionClosed;
             Timer.Start(ScanIntervalSeconds);
-            Print("V8 iniciado em modo DEMO: {0} símbolos; capital virtual US${1:F2}; risco {2:F2}%; até {3} posições, {4} entradas/dia, {5} perdas seguidas; teto {6:F2} lote.",
+            Print("V8 Cloud Local iniciado em modo DEMO: {0} símbolos; capital virtual US${1:F2}; risco {2:F2}%; até {3} posições, {4} entradas/dia, {5} perdas seguidas; teto {6:F2} lote.",
                 _states.Count, _virtualEquity, RiskPercent, MaxOpenPositions, MaxEntriesPerDay, MaxConsecutiveLosses, MaxLotsPerTrade);
             Print("ATENÇÃO: capital virtual só controla dimensionamento e limites internos; margem, execução e P&L da corretora continuam ligados à conta demo real.");
         }
@@ -253,7 +196,6 @@ namespace cAlgo.Robots
         protected override void OnTimer()
         {
             ResetDailyGuardIfNeeded();
-            ExpirePendingAiRequests();
             if (_dailyStopTriggered || DailyLossLimitReached() || _virtualEquity <= 0)
                 return;
 
@@ -331,128 +273,17 @@ namespace cAlgo.Robots
             double stopLossPips, double takeProfitPips, double fastEma, double slowEma,
             double rsi, double atrPips, double spreadPips)
         {
-            if (!AiFilterEnabled)
+            if (!LocalFilterEnabled)
             {
-                OpenPosition(symbolName, symbol, tradeType, stopLossPips, takeProfitPips);
+                Print("{0}: entrada bloqueada porque o filtro técnico local está desativado.", symbolName);
                 return;
             }
 
-            if (!_aiConnected || _aiClient == null)
-            {
-                Print("{0}: candidato bloqueado; IA indisponível (fail-closed).", symbolName);
-                return;
-            }
-
-            string requestId = Guid.NewGuid().ToString("N");
-            _pendingAiRequests[requestId] = new PendingSignal
-            {
-                RequestId = requestId,
-                SymbolName = symbolName,
-                Symbol = symbol,
-                TradeType = tradeType,
-                StopLossPips = stopLossPips,
-                TakeProfitPips = takeProfitPips,
-                CreatedAt = Server.Time
-            };
-
-            try
-            {
-                string payload = JsonSerializer.Serialize(new
-                {
-                    type = "analyze",
-                    requestId = requestId,
-                    token = AiClientToken,
-                    symbol = symbolName,
-                    side = tradeType.ToString().ToLowerInvariant(),
-                    timeframe = SignalTimeFrame.ToString(),
-                    fastEma = fastEma,
-                    slowEma = slowEma,
-                    rsi = rsi,
-                    atrPips = atrPips,
-                    spreadPips = spreadPips,
-                    stopLossPips = stopLossPips,
-                    takeProfitPips = takeProfitPips
-                });
-                _aiClient.Send(payload);
-                Print("{0}: sinal enviado à IA para filtragem; nenhuma ordem será aberta até resposta válida.", symbolName);
-            }
-            catch (Exception ex)
-            {
-                _pendingAiRequests.Remove(requestId);
-                Print("{0}: envio à IA falhou ({1}); sinal bloqueado por segurança.", symbolName, ex.Message);
-            }
-        }
-
-        private void HandleAiMessage(string message)
-        {
-            try
-            {
-                using (JsonDocument doc = JsonDocument.Parse(message))
-                {
-                    JsonElement root = doc.RootElement;
-                    if (!root.TryGetProperty("type", out JsonElement typeElement) ||
-                        typeElement.GetString() != "decision" ||
-                        !root.TryGetProperty("requestId", out JsonElement idElement) ||
-                        !root.TryGetProperty("allow", out JsonElement allowElement) ||
-                        !root.TryGetProperty("confidence", out JsonElement confidenceElement))
-                        return;
-
-                    string requestId = idElement.GetString();
-                    bool allow = allowElement.GetBoolean();
-                    double confidence = confidenceElement.GetDouble();
-                    string reason = root.TryGetProperty("reason", out JsonElement reasonElement)
-                        ? reasonElement.GetString()
-                        : "sem motivo informado";
-
-                    BeginInvokeOnMainThread(() => ProcessAiDecision(requestId, allow, confidence, reason));
-                }
-            }
-            catch (Exception ex)
-            {
-                Print("Resposta IA inválida: {0}. Nenhuma entrada será autorizada.", ex.Message);
-            }
-        }
-
-        private void ProcessAiDecision(string requestId, bool allow, double confidence, string reason)
-        {
-            if (string.IsNullOrEmpty(requestId) || !_pendingAiRequests.TryGetValue(requestId, out PendingSignal pending))
-                return;
-
-            _pendingAiRequests.Remove(requestId);
-
-            if (!allow || confidence < AiMinConfidence)
-            {
-                Print("{0}: IA rejeitou o sinal. Confiança={1:P0}; motivo={2}", pending.SymbolName, confidence, reason);
-                return;
-            }
-
-            if (Account.IsLive || _dailyStopTriggered || DailyLossLimitReached() || _virtualEquity <= 0 ||
-                _entriesToday >= MaxEntriesPerDay || _consecutiveLosses >= MaxConsecutiveLosses ||
-                Positions.FindAll(BotLabel).Length >= MaxOpenPositions ||
-                Positions.FindAll(BotLabel, pending.SymbolName).Length > 0)
-            {
-                Print("{0}: sinal aprovado pela IA, mas bloqueado pela proteção de risco/conta.", pending.SymbolName);
-                return;
-            }
-
-            Print("{0}: IA aprovou sinal {1} com confiança {2:P0}; motivo={3}",
-                pending.SymbolName, pending.TradeType, confidence, reason);
-            OpenPosition(pending.SymbolName, pending.Symbol, pending.TradeType, pending.StopLossPips, pending.TakeProfitPips);
-        }
-
-        private void ExpirePendingAiRequests()
-        {
-            var expired = new List<string>();
-            foreach (KeyValuePair<string, PendingSignal> pair in _pendingAiRequests)
-                if ((Server.Time - pair.Value.CreatedAt).TotalSeconds > 20)
-                    expired.Add(pair.Key);
-
-            foreach (string requestId in expired)
-            {
-                PendingSignal pending = _pendingAiRequests[requestId];
-                _pendingAiRequests.Remove(requestId);
-                Print("{0}: resposta da IA expirou; sinal cancelado sem abrir ordem.", pending.SymbolName);
-            }
+            // O candidato já passou pelo cruzamento EMA, faixa de RSI, ATR e spread em ScanSymbol.
+            // Sem chamada externa: a execução em nuvem não permite essa conexão de saída.
+            Print("{0}: sinal técnico local validado ({1}); EMA rápida={2:F5}, lenta={3:F5}, RSI={4:F1}, spread={5:F2}.",
+                symbolName, tradeType, fastEma, slowEma, rsi, spreadPips);
+            OpenPosition(symbolName, symbol, tradeType, stopLossPips, takeProfitPips);
         }
 
         private void OpenPosition(string symbolName, Symbol symbol, TradeType tradeType, double stopLossPips, double takeProfitPips)
@@ -568,11 +399,7 @@ namespace cAlgo.Robots
         {
             Positions.Closed -= OnPositionClosed;
             Timer.Stop();
-            if (_aiClient != null)
-                _aiClient.Close(WebSocketClientCloseStatus.NormalClosure, "cBot stopped");
-            _aiConnected = false;
-            _pendingAiRequests.Clear();
-            Print("V8 AI parado. Posições abertas não são fechadas automaticamente.");
+            Print("V8 Cloud Local parado. Posições abertas não são fechadas automaticamente.");
         }
     }
 }
