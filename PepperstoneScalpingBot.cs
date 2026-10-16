@@ -14,7 +14,7 @@ namespace cAlgo.Robots
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class PepperstoneScalpingBotV8 : Robot
     {
-        [Parameter("Símbolos (separados por vírgula)", DefaultValue = "EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD")]
+        [Parameter("Símbolos (separados por vírgula)", DefaultValue = "XAUUSD")]
         public string SymbolsToScan { get; set; }
 
         [Parameter("Período de sinal", DefaultValue = "Minute")]
@@ -86,7 +86,7 @@ namespace cAlgo.Robots
         [Parameter("Alvo ATR multiplicador", DefaultValue = 2.0, MinValue = 0.5)]
         public double TakeProfitAtrMultiplier { get; set; }
 
-        [Parameter("Spread máximo (pips)", DefaultValue = 1.5, MinValue = 0.1)]
+        [Parameter("Spread máximo (pips)", DefaultValue = 50.0, MinValue = 0.1)]
         public double MaxSpreadPips { get; set; }
 
         [Parameter("Etiqueta", DefaultValue = "PepperstoneScalpingBotV8AI")]
