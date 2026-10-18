@@ -1,0 +1,13 @@
+{
+  "name": "pocket-option-demo-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Painel demo de sinais e IA; sem execução de ordens",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
