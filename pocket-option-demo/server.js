@@ -7,6 +7,20 @@ const MODEL=process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const history=[];
 app.get('/health',(req,res)=>res.json({status:'ok',mode:'demo-only',aiConfigured:!!KEY,orderExecution:false}));
 app.get('/api/status',(req,res)=>res.json({status:'online',mode:'demo-only',aiConfigured:!!KEY,orderExecution:false,history:history.slice(0,20)}));
+app.get('/api/market/candles',async(req,res)=>{
+ try{
+  const allowed=['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','DOGEUSDT'];
+  const symbol=String(req.query.symbol||'BTCUSDT').toUpperCase();
+  if(!allowed.includes(symbol))return res.status(400).json({error:'Ativo não permitido nesta fonte pública.'});
+  const interval=String(req.query.interval||'1m');
+  if(!['1m','3m','5m','15m'].includes(interval))return res.status(400).json({error:'Período inválido.'});
+  const response=await fetch('https://api.binance.com/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval)+'&limit=100',{headers:{'Accept':'application/json'},signal:AbortSignal.timeout(10000)});
+  if(!response.ok)return res.status(502).json({error:'Fonte de cotações indisponível.'});
+  const rows=await response.json();
+  const candles=rows.map(k=>({open:Number(k[1]),high:Number(k[2]),low:Number(k[3]),close:Number(k[4]),time:Number(k[0]),closed:Date.now()>=Number(k[6])}));
+  res.set('Cache-Control','no-store').json({source:'Binance Spot public API',symbol,interval,candles,warning:'Essas cotações são da Binance Spot, não da Pocket Option; OTC e preços da corretora podem ser diferentes.'});
+ }catch(e){res.status(502).json({error:'Não foi possível obter cotações públicas agora.'});}
+});
 app.post('/api/analyze',async(req,res)=>{
  try{
   const c=req.body.candles;
