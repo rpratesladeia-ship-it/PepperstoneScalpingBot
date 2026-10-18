@@ -6,11 +6,11 @@ const KEY=(process.env.OPENAI_API_KEY||'').trim();
 const MODEL=process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const TG_TOKEN=(process.env.TELEGRAM_BOT_TOKEN||'').trim();
 const history=[];
-const tg={offset:0,chatIds:new Set(),scanEnabled:false,asset:'BTCUSDT',interval:'1m',aiEnabled:true,lastScan:0};
+const tg={offset:0,chatIds:new Set(),scanEnabled:false,asset:'BTCUSDT',interval:'5m',aiEnabled:true,lastScan:0,tradeAmountUsd:1,expiry:'5m',dailyLossLimitUsd:5,assetsMode:'all6'};
 const ALLOWED=['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','DOGEUSDT'];
 const INTERVALS=['1m','3m','5m','15m'];
 app.get('/health',(req,res)=>res.json({status:'ok',mode:'demo-only',aiConfigured:!!KEY,telegramConfigured:!!TG_TOKEN,orderExecution:false}));
-app.get('/api/status',(req,res)=>res.json({status:'online',mode:'demo-only',aiConfigured:!!KEY,telegramConfigured:!!TG_TOKEN,telegramScanEnabled:tg.scanEnabled,orderExecution:false,history:history.slice(0,20)}));
+app.get('/api/status',(req,res)=>res.json({status:'online',mode:'demo-only',aiConfigured:!!KEY,telegramConfigured:!!TG_TOKEN,telegramScanEnabled:tg.scanEnabled,settings:{tradeAmountUsd:tg.tradeAmountUsd,expiry:tg.expiry,dailyLossLimitUsd:tg.dailyLossLimitUsd,assets:ALLOWED,interval:tg.interval},orderExecution:false,history:history.slice(0,20)}));
 async function getCandles(symbol,interval){
  if(!ALLOWED.includes(symbol)||!INTERVALS.includes(interval))throw Error('Ativo ou período não permitido.');
  const response=await fetch('https://api.binance.com/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(interval)+'&limit=100',{headers:{'Accept':'application/json'},signal:AbortSignal.timeout(10000)});
@@ -49,7 +49,7 @@ async function tgSend(chatId,textMsg,keyboard){
  if(!TG_TOKEN)return;
  try{await fetch('https://api.telegram.org/bot'+TG_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text:textMsg,reply_markup:keyboard?{keyboard,resize_keyboard:true}:undefined}),signal:AbortSignal.timeout(10000)});}catch(e){console.error('Telegram send error:',e.message);}
 }
-function helpText(){return '🤖 NOSSO POCKET DEMO BOT\n\n/status — estado do bot\n/scan — analisar agora\n/monitorar — avisar a cada minuto\n/parar — parar avisos automáticos\n/ativo BTCUSDT — escolher ativo\n/periodo 1m — escolher 1m, 3m, 5m ou 15m\n/ia on ou /ia off — filtro de IA\n/ativos — lista de ativos\n/ajuda — comandos\n\nModo de sinais apenas: não envia ordens à Pocket Option. Cotações Binance Spot podem diferir de OTC.';}
+function helpText(){return '🤖 NOSSO POCKET AI TRADER — DEMO\n\n/start — iniciar monitoramento\n/status — estado e configurações\n/scan — analisar todos os 6 ativos agora\n/monitorar — monitorar todos os ativos a cada minuto\n/parar — parar monitoramento\n/ativo BTCUSDT — escolher ativo individual\n/periodo 1m — 1m, 3m, 5m ou 15m\n/ia on ou /ia off — filtro de IA\n/ativos — lista de ativos\n/ajuda — comandos\n\nConfiguração planejada: US$ 1 por operação, expiração 5m, limite diário US$ 5. Execução automática ainda não está conectada. Cotações Binance Spot podem diferir dos preços OTC.';}
 async function doScan(chatId,auto=false){
  try{const candles=await getCandles(tg.asset,tg.interval);const d=await analyzeCandles(candles,tg.asset+' / '+tg.interval,true);const msg='📊 '+d.asset+'\nSinal técnico: '+d.technicalSignal+'\nSinal final: '+d.finalSignal+'\nRSI: '+d.rsi+' | Momentum: '+d.momentumPct+'%\nEMA 9: '+d.ema9+' | EMA 21: '+d.ema21+'\nIA aprova: '+d.aiApproved+'\nMotivo: '+d.aiReason+'\n\nFonte: Binance Spot. Não é cotação Pocket Option/OTC. Nenhuma ordem foi enviada.';await tgSend(chatId,msg);return d;}
  catch(e){await tgSend(chatId,'Não consegui analisar agora: '+e.message);return null;}
@@ -60,13 +60,13 @@ async function handleUpdate(update){
  tg.chatIds.add(chatId);
  if(cmd==='/start'){await tgSend(chatId,'Bem-vindo ao NOSSO Pocket Demo Bot. Ele é independente do bot de terceiros. Começa em modo de sinais, sem execução de ordens.\n\n'+helpText(),[['📊 Analisar agora','⚙️ Estado','🛑 Parar monitoramento']]);return;}
  if(cmd==='/ajuda'||cmd==='/help'){await tgSend(chatId,helpText());return;}
- if(cmd==='/status'||textMsg==='⚙️ Estado'){await tgSend(chatId,'Estado: online\nModo: demo / sinais apenas\nIA: '+(KEY?'chave configurada':'não configurada')+'; filtro '+(tg.aiEnabled?'ligado':'desligado')+'\nAtivo: '+tg.asset+'\nPeríodo: '+tg.interval+'\nMonitoramento: '+(tg.scanEnabled?'ligado':'desligado')+'\nExecução Pocket Option: NÃO implementada.');return;}
+ if(cmd==='/status'||textMsg==='⚙️ Estado'){await tgSend(chatId,'Estado: online\nModo: somente demo / sinais\nIA: '+(KEY?'chave configurada':'não configurada')+'; filtro '+(tg.aiEnabled?'ligado':'desligado')+'\nAtivos: '+ALLOWED.join(', ')+'\nPeríodo: '+tg.interval+'\nValor planejado: US$ '+tg.tradeAmountUsd+'\nExpiração planejada: '+tg.expiry+'\nLimite diário planejado: US$ '+tg.dailyLossLimitUsd+'\nMonitoramento: '+(tg.scanEnabled?'ligado':'desligado')+'\nExecução Pocket Option: NÃO implementada.');return;}
  if(cmd==='/ativos'){await tgSend(chatId,'Ativos disponíveis: '+ALLOWED.join(', ')+'\nUse /ativo BTCUSDT para escolher.');return;}
  if(cmd==='/ativo'){const a=(parts[1]||'').toUpperCase();if(!ALLOWED.includes(a)){await tgSend(chatId,'Ativo inválido. Use /ativos para ver a lista.');return;}tg.asset=a;await tgSend(chatId,'Ativo definido: '+a);return;}
  if(cmd==='/periodo'){const p=parts[1]||'';if(!INTERVALS.includes(p)){await tgSend(chatId,'Período válido: 1m, 3m, 5m ou 15m. Exemplo: /periodo 5m');return;}tg.interval=p;await tgSend(chatId,'Período definido: '+p);return;}
  if(cmd==='/ia'){const v=(parts[1]||'').toLowerCase();if(!['on','off'].includes(v)){await tgSend(chatId,'Use /ia on ou /ia off. É necessário configurar OPENAI_API_KEY no Render para usar a IA.');return;}tg.aiEnabled=v==='on';await tgSend(chatId,'Filtro de IA '+(tg.aiEnabled?'ligado':'desligado')+'. Chave configurada: '+(!!KEY)+'.');return;}
- if(cmd==='/scan'||textMsg==='📊 Analisar agora'){await doScan(chatId);return;}
- if(cmd==='/monitorar'){tg.scanEnabled=true;await tgSend(chatId,'Monitoramento ligado. Vou analisar o ativo selecionado a cada 60 segundos enquanto o serviço estiver ativo. Para parar, use /parar.');await doScan(chatId);return;}
+ if(cmd==='/scan'||textMsg==='📊 Analisar agora'){await doScan(chatId,false,true);return;}
+ if(cmd==='/monitorar'){tg.scanEnabled=true;await tgSend(chatId,'Monitoramento ligado para os 6 ativos, a cada 60 segundos enquanto o serviço estiver ativo. Configuração planejada: US$ 1, expiração 5m, limite diário US$ 5. Isso ainda é monitoramento de sinais, não execução de ordens. Para parar, use /parar.');await doScan(chatId,false,true);return;}
  if(cmd==='/parar'||textMsg==='🛑 Parar monitoramento'){tg.scanEnabled=false;await tgSend(chatId,'Monitoramento pausado.');return;}
  await tgSend(chatId,'Não reconheci esse comando. Use /ajuda.');
 }
@@ -80,7 +80,7 @@ async function telegramPoll(){
   }catch(e){console.error('Telegram polling error:',e.message);await new Promise(ok=>setTimeout(ok,5000));}
  }
 }
-setInterval(async()=>{if(!tg.scanEnabled||!tg.chatIds.size||Date.now()-tg.lastScan<60000)return;tg.lastScan=Date.now();for(const id of tg.chatIds)await doScan(id,true);},5000);
+setInterval(async()=>{if(!tg.scanEnabled||!tg.chatIds.size||Date.now()-tg.lastScan<60000)return;tg.lastScan=Date.now();for(const id of tg.chatIds)await doScan(id,true,true);},5000);
 app.use(express.static(__dirname+'/public'));
 app.get('*',(req,res)=>res.sendFile(__dirname+'/public/index.html'));
 app.listen(PORT,'0.0.0.0',()=>{console.log('Pocket demo dashboard listening on '+PORT);if(TG_TOKEN)telegramPoll();else console.log('Telegram bot disabled: set TELEGRAM_BOT_TOKEN in Render.');});
