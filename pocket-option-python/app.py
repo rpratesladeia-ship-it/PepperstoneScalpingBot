@@ -6,6 +6,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
+# Never let httpx log request URLs: Telegram bot URLs contain the secret token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("pocket-ai")
 app = FastAPI(title="Meu Pocket AI Trader", version="1.0.0")
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -140,7 +143,7 @@ async def poll():
     if not TOKEN:
         log.error("TELEGRAM_BOT_TOKEN ausente: bot não vai iniciar polling.")
         return
-    log.info("Telegram polling started (token present; value never logged).")
+    log.info("Telegram polling started (token configured; request URLs are redacted).")
     async with httpx.AsyncClient(timeout=40) as client:
         while True:
             try:
@@ -148,7 +151,10 @@ async def poll():
                 data=r.json()
                 if r.status_code>=400 or not data.get("ok"):
                     log.error("Telegram getUpdates failed: HTTP %s; %s",r.status_code,str(data)[:200]); await asyncio.sleep(5); continue
-                for upd in data.get("result",[]):
+                updates=data.get("result",[])
+                if updates:
+                    log.info("Telegram updates received: %s", len(updates))
+                for upd in updates:
                     state["offset"]=upd["update_id"]+1
                     await handle(upd)
             except Exception as e:
