@@ -145,7 +145,7 @@ class CTraderDemoBridge:
                         prices["bid_raw"] = int(payload.bid)
                     if getattr(payload, "ask", 0):
                         prices["ask_raw"] = int(payload.ask)
-        elif message.payloadType == ProtoOANewOrderRes().payloadType:
+        elif message.payloadType == ProtoOAExecutionEvent().payloadType:
             with self._lock:
                 order = getattr(payload, "order", None)
                 self._state["last_order"] = {"accepted": True, "order_id": int(order.orderId) if order else None, "status": "resposta recebida"}
@@ -216,7 +216,7 @@ class CTraderDemoBridge:
         with self._lock:
             order = getattr(payload, "order", None)
             self._state["last_order"] = {
-                "accepted": message.payloadType == ProtoOANewOrderRes().payloadType,
+                "accepted": message.payloadType == ProtoOAExecutionEvent().payloadType,
                 "symbol": symbol, "side": side, "volume_units": volume_units,
                 "order_id": int(order.orderId) if order else None,
                 "status": "resposta recebida",
