@@ -57,7 +57,7 @@ async function doScan(chatId,auto=false){
 }
 async function handleUpdate(update){
  const m=update.message;if(!m||!m.chat||typeof m.text!=='string')return;
- const chatId=m.chat.id,textMsg=m.text.trim(),parts=textMsg.split(/\s+/),cmd=parts[0].split('@')[0].toLowerCase();
+ const chatId=m.chat.id,textMsg=m.text.trim(),parts=textMsg.split(/\s+/),cmd=parts[0].split('@')[0].toLowerCase().replace(/[.,!?;:]+$/,'');
  tg.chatIds.add(chatId);
  if(cmd==='/start'){await tgSend(chatId,'Bem-vindo ao NOSSO Pocket Demo Bot. Ele é independente do bot de terceiros. Começa em modo de sinais, sem execução de ordens.\n\n'+helpText(),[['📊 Analisar agora','⚙️ Estado','🛑 Parar monitoramento']]);return;}
  if(cmd==='/ajuda'||cmd==='/help'){await tgSend(chatId,helpText());return;}
