@@ -128,7 +128,11 @@ class AccountSelection(BaseModel):
     account_id: int
 
 
-class AutoTradingToggle(BaseModel):\n    enabled: bool\n\n\nclass DemoOrder(BaseModel):
+class AutoTradingToggle(BaseModel):
+    enabled: bool
+
+
+class DemoOrder(BaseModel):
     symbol: str
     side: str
     volume_units: int
