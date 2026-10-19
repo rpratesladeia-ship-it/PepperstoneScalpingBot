@@ -17,7 +17,7 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 ASSETS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"]
 INTERVALS = {"1m":"1m", "3m":"3m", "5m":"5m", "15m":"15m"}
 EXPIRIES = {"5s", "10s", "15s", "30s", "1m", "3m", "5m"}
-state = {"offset":0, "chats":set(), "running":False, "interval":"1m", "amount":1.0, "expiry":"5m", "daily_limit":5.0, "ai":True, "last_scan":0}
+state = {"offset":0, "chats":set(), "running":False, "interval":"1m", "amount":1.0, "expiry":"5m", "daily_limit":5.0, "ai":False, "last_scan":0}
 history = []
 
 @app.get("/")
@@ -65,7 +65,7 @@ async def analyze(symbol):
         body=cs[-1]["c"]-cs[-1]["o"]
         signal="CALL" if e9>e21 and body>0 and mom>0 else "PUT" if e9<e21 and body<0 and mom<0 else "NO_TRADE"
         if (signal=="CALL" and rsi>=72) or (signal=="PUT" and rsi<=28): signal="NO_TRADE"
-        approved=False; reason="Filtro de IA indisponível; entrada bloqueada."
+        approved=False; reason=("Filtro de IA desligado; sinal baseado apenas na análise técnica." if not state["ai"] else "Filtro de IA indisponível; entrada bloqueada.")
         if signal!="NO_TRADE" and state["ai"] and OPENAI_KEY:
             try:
                 async with httpx.AsyncClient(timeout=18) as client:
@@ -112,7 +112,7 @@ async def handle(update):
     state["chats"].add(chat); parts=text.split(); cmd=parts[0].split("@")[0].lower()
     if cmd in ("/start",):
         state["running"]=True
-        await send(chat,"Bot Python conectado. Monitoramento de sinais iniciado para os seis ativos.\n\n"+HELP)
+        await send(chat,"Bot Python conectado. Monitoramento de sinais iniciado para os seis ativos. Filtro de IA desligado: sinais técnicos apenas; nenhuma ordem é enviada.\n\n"+HELP)
         await scan(chat); return
     if cmd in ("/ajuda","/help"): await send(chat,HELP); return
     if cmd=="/status":
@@ -134,7 +134,7 @@ async def handle(update):
     if cmd=="/ia":
         v=parts[1].lower() if len(parts)>1 else ""
         if v not in ("on","off"): await send(chat,"Use /ia on ou /ia off."); return
-        state["ai"]=v=="on"; await send(chat,"Filtro IA "+("ligado" if state["ai"] else "desligado")); return
+        state["ai"]=v=="on"; await send(chat,"Filtro IA "+("ligado" if state["ai"] else "desligado")+". "+("Os sinais podem ser bloqueados se a API falhar." if state["ai"] else "Os sinais passam a depender apenas dos critérios técnicos. Nenhuma ordem é enviada.")); return
     if cmd=="/scan": await scan(chat); return
     if cmd=="/parar": state["running"]=False; await send(chat,"Monitoramento parado."); return
     await send(chat,"Comando não reconhecido. Use /ajuda.")
