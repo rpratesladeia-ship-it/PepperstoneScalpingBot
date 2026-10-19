@@ -28,7 +28,7 @@ async def health():
     return await root()
 @app.get("/api/status")
 async def api_status():
-    return {"status":"online","runtime":"python","telegram_configured":bool(TOKEN),"ai_configured":bool(OPENAI_KEY),"monitoring":state["running"],"settings":{"interval":state["interval"],"amount_usd":state["amount"],"expiry":state["expiry"],"daily_loss_limit_usd":state["daily_limit"],"assets":ASSETS},"order_execution":False,"history":history[-20:]}
+    return {"status":"online","runtime":"python","telegram_configured":bool(TOKEN),"ai_configured":bool(OPENAI_KEY),"monitoring":state["running"],"ai_filter_enabled":state["ai"],"settings":{"interval":state["interval"],"amount_usd":state["amount"],"expiry":state["expiry"],"daily_loss_limit_usd":state["daily_limit"],"assets":ASSETS},"order_execution":False,"history":history[-20:]}
 
 async def send(chat, text):
     if not TOKEN: return
