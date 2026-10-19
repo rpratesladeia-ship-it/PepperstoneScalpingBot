@@ -64,7 +64,7 @@ async def connect(request: Request):
         return HTMLResponse("<h2>Configuração pendente</h2><p>Cadastre CTRADER_CLIENT_ID, CTRADER_CLIENT_SECRET e CTRADER_REDIRECT_URI nas variáveis secretas do servidor.</p><p>Depois, registre/aprove o aplicativo em <a href='https://openapi.ctrader.com/'>cTrader Open API</a> e cadastre o mesmo redirect URI.</p><p><a href='/'>Voltar</a></p>",status_code=503)
     state = secrets.token_urlsafe(24)
     request.session["oauth_state"] = state
-    params = {"client_id":CLIENT_ID,"redirect_uri":REDIRECT_URI,"scope":"accounts","product":"web","state":state}
+    params = {"client_id":CLIENT_ID,"redirect_uri":REDIRECT_URI,"scope":"trading","product":"web","state":state}
     return RedirectResponse("https://id.ctrader.com/my/settings/openapi/grantingaccess/?"+urlencode(params),status_code=303)
 
 @app.get("/oauth/callback")
@@ -99,6 +99,12 @@ class AccountSelection(BaseModel):
     account_id: int
 
 
+class DemoOrder(BaseModel):
+    symbol: str
+    side: str
+    volume_units: int
+
+
 @app.post("/api/account")
 async def select_demo_account(request: Request, selection: AccountSelection):
     sid = request.session.get("sid")
@@ -110,6 +116,21 @@ async def select_demo_account(request: Request, selection: AccountSelection):
         return {**result, "message":"Autorização da conta DEMO solicitada; consulte /api/status para confirmar."}
     except PermissionError:
         return HTMLResponse("Conta real bloqueada. Este painel aceita somente DEMO.", status_code=403)
+    except (ValueError, RuntimeError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+
+
+@app.post("/api/order")
+async def place_demo_order(request: Request, order: DemoOrder):
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if not bridge:
+        return HTMLResponse("Conecte a conta cTrader primeiro.", status_code=401)
+    try:
+        result = bridge.place_demo_market_order(order.symbol, order.side, order.volume_units)
+        return {**result, "message":"Ordem enviada à API DEMO; confirme a resposta em /api/status."}
+    except PermissionError:
+        return HTMLResponse("Conta real bloqueada. Somente DEMO.", status_code=403)
     except (ValueError, RuntimeError) as exc:
         return HTMLResponse(str(exc), status_code=400)
 
