@@ -4,6 +4,8 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
+from pydantic import BaseModel
+from ctrader_engine import CTraderDemoBridge
 
 logging.basicConfig(level=logging.INFO)
 # Never allow HTTP client debug logs to print OAuth URLs, authorization codes, or secrets.
@@ -17,6 +19,7 @@ REDIRECT_URI = os.getenv("CTRADER_REDIRECT_URI", "").strip()
 SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
 # Prototype: tokens remain in memory only and are cleared when the service restarts.
 TOKENS = {}
+BRIDGES = {}
 app = FastAPI(title=APP_NAME, version="0.1.0")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET or secrets.token_urlsafe(32), https_only=True, same_site="lax")
 
@@ -51,7 +54,9 @@ async def health():
 @app.get("/api/status")
 async def api_status(request: Request):
     sid = request.session.get("sid")
-    return {"status":"online","oauth_configured":bool(CLIENT_ID and CLIENT_SECRET and REDIRECT_URI),"oauth_authorized":bool(sid and TOKENS.get(sid)),"account_validated":False,"mode":"demo_only","order_execution":False,"next_step":"Validate cTrader account list and explicitly select a demo account."}
+    bridge = BRIDGES.get(sid) if sid else None
+    broker = bridge.snapshot() if bridge else {"connected":False,"application_authorized":False,"account_validated":False,"account_authorized":False,"accounts":[],"selected_account_id":None,"last_error":None}
+    return {"status":"online","oauth_configured":bool(CLIENT_ID and CLIENT_SECRET and REDIRECT_URI),"oauth_authorized":bool(sid and TOKENS.get(sid)),"mode":"demo_only","order_execution":False,"broker":broker,"next_step":"Validar conta DEMO; envio de ordens ainda bloqueado."}
 
 @app.get("/connect")
 async def connect(request: Request):
@@ -81,11 +86,33 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
         sid = request.session.get("sid") or secrets.token_urlsafe(32)
         request.session["sid"] = sid
         TOKENS[sid] = {"access_token":access_token,"refresh_token":data.get("refreshToken"),"expires_in":data.get("expiresIn")}
+        bridge = CTraderDemoBridge(CLIENT_ID, CLIENT_SECRET)
+        BRIDGES[sid] = bridge
+        bridge.connect(access_token)
         return RedirectResponse("/",status_code=303)
     except Exception as exc:
         # Do not log exception details: HTTP errors can contain sensitive request URLs.
         log.error("cTrader OAuth token exchange failed (%s)", type(exc).__name__)
         return HTMLResponse("<h2>Falha na troca do código OAuth</h2><p>Confira os registros do servidor. Não envie códigos nem credenciais no chat.</p><a href='/'>Voltar</a>",status_code=502)
+
+class AccountSelection(BaseModel):
+    account_id: int
+
+
+@app.post("/api/account")
+async def select_demo_account(request: Request, selection: AccountSelection):
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if not bridge:
+        return HTMLResponse("Conecte a conta cTrader primeiro.", status_code=401)
+    try:
+        result = bridge.authorize_demo_account(selection.account_id)
+        return {**result, "message":"Autorização da conta DEMO solicitada; consulte /api/status para confirmar."}
+    except PermissionError:
+        return HTMLResponse("Conta real bloqueada. Este painel aceita somente DEMO.", status_code=403)
+    except (ValueError, RuntimeError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+
 
 @app.post("/disconnect")
 async def disconnect(request: Request):
