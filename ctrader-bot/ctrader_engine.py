@@ -34,6 +34,12 @@ class CTraderDemoBridge:
             "balance": None, "open_positions": 0, "order_execution": False, "last_order": None,
         }
         self._thread = None
+        self._auto_enabled = False
+        self._auto_last_signal = {}
+        self._auto_history = {}
+        self._auto_cooldown_seconds = 300
+        self._auto_last_trade_at = {}
+        self._auto_max_positions = 1
 
     def snapshot(self):
         with self._lock:
@@ -163,10 +169,70 @@ class CTraderDemoBridge:
                         prices["bid_raw"] = int(payload.bid)
                     if getattr(payload, "ask", 0):
                         prices["ask_raw"] = int(payload.ask)
+                    current = int(getattr(payload, "bid", 0) or getattr(payload, "ask", 0) or 0)
+                    if current:
+                        history = self._auto_history.setdefault(name, [])
+                        history.append(current)
+                        del history[:-30]
+                        self._evaluate_auto_entry(name, history)
         elif message.payloadType == ProtoOAExecutionEvent().payloadType:
             with self._lock:
                 order = getattr(payload, "order", None)
                 self._state["last_order"] = {"accepted": True, "order_id": int(order.orderId) if order else None, "status": "resposta recebida"}
+
+
+    def set_auto_trading(self, enabled: bool):
+        """Enable only guarded demo entries; never permits a live account."""
+        with self._lock:
+            if enabled:
+                account = next((a for a in self._state["accounts"]
+                                if a["account_id"] == self._state["selected_account_id"]), None)
+                if not self._state["connected"] or not self._state["application_authorized"] or not self._state["account_authorized"]:
+                    raise RuntimeError("Conecte e autorize uma conta DEMO antes de ativar.")
+                if not account or account["is_live"]:
+                    raise PermissionError("Automação bloqueada: somente conta DEMO.")
+                if not self._state["symbols"]:
+                    raise RuntimeError("Nenhum ativo disponível para a automação.")
+            self._auto_enabled = bool(enabled)
+            self._state["auto_trading"] = self._auto_enabled
+            self._state["auto_status"] = "Ativo: aguardando cruzamento de médias" if enabled else "Desativado"
+        return {"auto_trading": self._auto_enabled, "demo_only": True}
+
+    def _evaluate_auto_entry(self, symbol: str, history):
+        # EMA crossover on incoming ticks. Guarded, one position at a time, cooldown.
+        if not self._auto_enabled or len(history) < 22:
+            return
+        import time
+        now = time.time()
+        with self._lock:
+            if not self._state["account_authorized"] or self._state["open_positions"] >= self._auto_max_positions:
+                return
+            if now - self._auto_last_trade_at.get(symbol, 0) < self._auto_cooldown_seconds:
+                return
+            prices = list(history)
+            previous = prices[:-1]
+            fast_prev = sum(previous[-10:-1]) / 9
+            slow_prev = sum(previous[-22:-1]) / 21
+            fast_now = sum(prices[-9:]) / 9
+            slow_now = sum(prices[-21:]) / 21
+            side = None
+            if fast_prev <= slow_prev and fast_now > slow_now:
+                side = "BUY"
+            elif fast_prev >= slow_prev and fast_now < slow_now:
+                side = "SELL"
+            if not side:
+                return
+            self._auto_last_trade_at[symbol] = now
+            self._state["auto_status"] = "Sinal " + side + " em " + symbol + "; enviando ordem demo"
+        try:
+            # One minimal unit; this is demo-only and intentionally throttled.
+            self.place_demo_market_order(symbol, side, 1)
+            with self._lock:
+                self._state["auto_status"] = "Ordem DEMO enviada para confirmação: " + side + " " + symbol
+        except Exception as exc:
+            with self._lock:
+                self._state["auto_status"] = "Entrada bloqueada: " + str(exc)[:140]
+            log.warning("Automatic demo entry blocked for %s: %s", symbol, type(exc).__name__)
 
     def authorize_demo_account(self, account_id: int):
         with self._lock:
