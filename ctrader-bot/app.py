@@ -6,6 +6,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 logging.basicConfig(level=logging.INFO)
+# Never allow HTTP client debug logs to print OAuth URLs, authorization codes, or secrets.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("trader-ctrader")
 APP_NAME = "Meu Trader Multimercado"
 CLIENT_ID = os.getenv("CTRADER_CLIENT_ID", "").strip()
@@ -79,8 +82,9 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
         request.session["sid"] = sid
         TOKENS[sid] = {"access_token":access_token,"refresh_token":data.get("refreshToken"),"expires_in":data.get("expiresIn")}
         return RedirectResponse("/",status_code=303)
-    except Exception:
-        log.exception("cTrader OAuth token exchange failed")
+    except Exception as exc:
+        # Do not log exception details: HTTP errors can contain sensitive request URLs.
+        log.error("cTrader OAuth token exchange failed (%s)", type(exc).__name__)
         return HTMLResponse("<h2>Falha na troca do código OAuth</h2><p>Confira os registros do servidor. Não envie códigos nem credenciais no chat.</p><a href='/'>Voltar</a>",status_code=502)
 
 @app.post("/disconnect")
