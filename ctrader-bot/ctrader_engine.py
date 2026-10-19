@@ -3,19 +3,9 @@ import threading
 from typing import Any
 
 from ctrader_open_api import Client, TcpProtocol, EndPoints, Protobuf
-from ctrader_open_api.messages.OpenApiMessages_pb2 import (
-    ProtoOAApplicationAuthReq,
-    ProtoOAApplicationAuthRes,
-    ProtoOAGetAccountListByAccessTokenReq,
-    ProtoOAGetAccountListByAccessTokenRes,
-    ProtoOAAccountAuthReq,
-    ProtoOAAccountAuthRes,
-    ProtoHeartbeatEvent,
-    ProtoOANewOrderReq, ProtoOANewOrderRes, ProtoOASymbolsListReq,
-    ProtoOASymbolsListRes, ProtoOASubscribeSpotsReq, ProtoOASpotEvent,
-    ProtoOATraderReq, ProtoOATraderRes, ProtoOAReconcileReq, ProtoOAReconcileRes,
-    ProtoOAOrderType, ProtoOATradeSide,
-)
+from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import *
+from ctrader_open_api.messages.OpenApiMessages_pb2 import *
+from ctrader_open_api.messages.OpenApiModelMessages_pb2 import *
 from twisted.internet import reactor
 
 
