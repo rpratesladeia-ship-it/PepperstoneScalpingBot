@@ -1,6 +1,9 @@
 """Minimal cTrader Open API session bridge. Demo-only; order submission is intentionally not exposed yet."""
 import threading
+import logging
 from typing import Any
+
+log = logging.getLogger("trader-ctrader")
 
 from ctrader_open_api import Client, TcpProtocol, EndPoints, Protobuf
 from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import *
@@ -73,18 +76,33 @@ class CTraderDemoBridge:
             self._state.update(connected=False, application_authorized=False,
                                account_authorized=False, last_error="Conexão cTrader interrompida")
 
-    def _on_error(self, _failure):
+    def _on_error(self, failure):
+        try:
+            error_type = failure.type.__name__
+        except Exception:
+            error_type = "ErroDeTransporte"
+        log.warning("cTrader transport failure: %s", error_type)
         with self._lock:
-            self._state["last_error"] = "Falha na comunicação com a API cTrader"
+            self._state["last_error"] = "Falha de comunicação (" + error_type + "). Reconecte pelo botão cTrader."
+            self._state["application_authorized"] = False
+            self._state["account_authorized"] = False
         return None
 
     def _on_message(self, client, message):
         if message.payloadType == ProtoHeartbeatEvent().payloadType:
             return
         payload = Protobuf.extract(message)
+        if message.payloadType == ProtoOAErrorRes().payloadType:
+            code = str(getattr(payload, "errorCode", "erro cTrader"))
+            with self._lock:
+                self._state["last_error"] = "cTrader recusou uma solicitação: " + code
+                self._state["account_authorized"] = False
+            log.warning("cTrader API error code: %s", code[:100])
+            return
         if message.payloadType == ProtoOAApplicationAuthRes().payloadType:
             with self._lock:
                 self._state["application_authorized"] = True
+                self._state["last_error"] = None
             req = ProtoOAGetAccountListByAccessTokenReq()
             req.accessToken = self._token
             client.send(req).addErrback(self._on_error)
@@ -97,8 +115,8 @@ class CTraderDemoBridge:
                 })
             with self._lock:
                 self._state["accounts"] = accounts
-                self._state["account_validated"] = bool(accounts) and all(not a["is_live"] for a in accounts)
-                self._state["last_error"] = None if accounts else "Nenhuma conta retornada pelo cTrader"
+                self._state["account_validated"] = any(not a["is_live"] for a in accounts)
+                self._state["last_error"] = None if accounts else "API autorizada, mas nenhuma conta foi retornada; verifique a permissão de acesso a contas no aplicativo cTrader"
         elif message.payloadType == ProtoOAAccountAuthRes().payloadType:
             with self._lock:
                 self._state["account_authorized"] = True
