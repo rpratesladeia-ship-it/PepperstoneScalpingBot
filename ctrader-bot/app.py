@@ -48,9 +48,17 @@ async function refresh(){
   $('symbols').textContent=(b.symbols||[]).join(', ')||'Nenhum ativo ainda';
   $('execution').textContent=b.auto_trading?'AUTOMÁTICA DEMO ATIVA':(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');\n  $('autoToggle').textContent=b.auto_trading?'DESATIVAR ROBÔ AUTOMÁTICO':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO';
-  const sel=$('account'), previous=sel.value; sel.innerHTML='';
-  (b.accounts||[]).forEach(a=>{const o=document.createElement('option');o.value=a.account_id;o.textContent=a.account_id+' — '+(a.is_live?'REAL (bloqueada)':'DEMO');o.disabled=a.is_live;sel.appendChild(o)});
-  if(previous)sel.value=previous; if(b.selected_account_id)sel.value=String(b.selected_account_id);
+  const sel=$('account');
+  const accountList=(b.accounts||[]).map(a=>({id:String(a.account_id),live:!!a.is_live}));
+  const signature=JSON.stringify(accountList);
+  if(sel.dataset.signature!==signature){
+    const previous=sel.value;
+    sel.replaceChildren();
+    accountList.forEach(a=>{const o=document.createElement('option');o.value=a.id;o.textContent=a.id+' — '+(a.live?'REAL (bloqueada)':'DEMO');o.disabled=a.live;sel.appendChild(o)});
+    sel.dataset.signature=signature;
+    if(previous && accountList.some(a=>a.id===previous && !a.live)) sel.value=previous;
+    else if(b.selected_account_id && accountList.some(a=>a.id===String(b.selected_account_id) && !a.live)) sel.value=String(b.selected_account_id);
+  }
   const q=b.prices||{}; $('quotes').textContent=Object.keys(q).length?Object.entries(q).map(([n,p])=>n+': bid raw '+(p.bid_raw??'—')+' / ask raw '+(p.ask_raw??'—')).join(' | '):'Aguardando preços do servidor cTrader…';
   if(b.last_order)$('result').textContent='Última ordem: '+JSON.stringify(b.last_order);
  }catch(e){$('status').textContent='Não foi possível consultar o estado do servidor.'}
