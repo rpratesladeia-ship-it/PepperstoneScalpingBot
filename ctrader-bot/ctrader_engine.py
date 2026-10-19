@@ -31,7 +31,9 @@ class CTraderDemoBridge:
             "selected_account_id": None,
             "last_error": None,
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
-            "balance": None, "open_positions": 0, "order_execution": False, "last_order": None,
+            "balance": None, "equity": None, "margin": None, "free_margin": None,
+            "open_positions": 0, "order_execution": False, "last_order": None,
+            "risk_limits": {"max_positions": 2, "min_free_margin": 25.0},
         }
         self._thread = None
         self._auto_enabled = False
@@ -225,7 +227,12 @@ class CTraderDemoBridge:
         import time
         now = time.time()
         with self._lock:
-            if not self._state["account_authorized"] or self._state["open_positions"] >= self._auto_max_positions:
+            if not self._state["account_authorized"] or self._state["open_positions"] >= self._state["risk_limits"]["max_positions"]:
+                self._state["auto_status"] = "Entrada bloqueada: limite de posições atingido ou conta não autorizada"
+                return
+            free_margin = self._state.get("free_margin")
+            if free_margin is not None and free_margin < self._state["risk_limits"]["min_free_margin"]:
+                self._state["auto_status"] = "Entrada bloqueada: margem livre abaixo do mínimo de segurança"
                 return
             if now - self._auto_last_trade_at.get(symbol, 0) < self._auto_cooldown_seconds:
                 return
@@ -299,6 +306,12 @@ class CTraderDemoBridge:
             raise ValueError("Ativo não encontrado na conta")
         if not state["prices"].get(symbol):
             raise RuntimeError("Aguardando cotação do ativo")
+        if int(state.get("open_positions", 0)) >= int(state.get("risk_limits", {}).get("max_positions", 2)):
+            raise RuntimeError("Limite de segurança: máximo de 2 posições simultâneas.")
+        free_margin = state.get("free_margin")
+        min_free_margin = float(state.get("risk_limits", {}).get("min_free_margin", 25.0))
+        if free_margin is not None and free_margin < min_free_margin:
+            raise RuntimeError("Margem livre abaixo do mínimo de segurança de US$ %.2f." % min_free_margin)
         req = ProtoOANewOrderReq()
         req.ctidTraderAccountId = int(state["selected_account_id"])
         req.symbolId = int(symbol_id)
