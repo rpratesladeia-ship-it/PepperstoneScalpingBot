@@ -11,6 +11,10 @@ from ctrader_open_api.messages.OpenApiMessages_pb2 import (
     ProtoOAAccountAuthReq,
     ProtoOAAccountAuthRes,
     ProtoHeartbeatEvent,
+    ProtoOANewOrderReq, ProtoOANewOrderRes, ProtoOASymbolsListReq,
+    ProtoOASymbolsListRes, ProtoOASubscribeSpotsReq, ProtoOASpotEvent,
+    ProtoOATraderReq, ProtoOATraderRes, ProtoOAReconcileReq, ProtoOAReconcileRes,
+    ProtoOAOrderType, ProtoOATradeSide,
 )
 from twisted.internet import reactor
 
@@ -33,6 +37,8 @@ class CTraderDemoBridge:
             "accounts": [],
             "selected_account_id": None,
             "last_error": None,
+            "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
+            "balance": None, "open_positions": 0, "order_execution": False, "last_order": None,
         }
         self._thread = None
 
@@ -107,6 +113,53 @@ class CTraderDemoBridge:
             with self._lock:
                 self._state["account_authorized"] = True
 
+            trader = ProtoOATraderReq()
+            trader.ctidTraderAccountId = int(payload.ctidTraderAccountId)
+            client.send(trader).addErrback(self._on_error)
+            reconcile = ProtoOAReconcileReq()
+            reconcile.ctidTraderAccountId = int(payload.ctidTraderAccountId)
+            client.send(reconcile).addErrback(self._on_error)
+            symbols = ProtoOASymbolsListReq()
+            symbols.ctidTraderAccountId = int(payload.ctidTraderAccountId)
+            symbols.includeArchivedSymbols = False
+            client.send(symbols).addErrback(self._on_error)
+        elif message.payloadType == ProtoOATraderRes().payloadType:
+            with self._lock:
+                self._state["balance"] = float(payload.trader.balance) / 100.0
+                self._state["equity"] = float(payload.trader.balance) / 100.0
+        elif message.payloadType == ProtoOAReconcileRes().payloadType:
+            with self._lock:
+                self._state["open_positions"] = len(getattr(payload, "position", []))
+        elif message.payloadType == ProtoOASymbolsListRes().payloadType:
+            wanted = {"XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSD", "US30"}
+            found = {}
+            for symbol in getattr(payload, "symbol", []):
+                name = str(getattr(symbol, "symbolName", "")).upper()
+                if name in wanted:
+                    found[name] = int(symbol.symbolId)
+            with self._lock:
+                self._state["symbol_ids"] = found
+                self._state["symbols"] = sorted(found.keys())
+            for symbol_id in found.values():
+                req = ProtoOASubscribeSpotsReq()
+                req.ctidTraderAccountId = int(self._state["selected_account_id"])
+                req.symbolId.append(int(symbol_id))
+                client.send(req).addErrback(self._on_error)
+        elif message.payloadType == ProtoOASpotEvent().payloadType:
+            with self._lock:
+                symbol_id = int(getattr(payload, "symbolId", 0))
+                name = next((key for key, value in self._state["symbol_ids"].items() if value == symbol_id), None)
+                if name:
+                    prices = self._state["prices"].setdefault(name, {})
+                    if getattr(payload, "bid", 0):
+                        prices["bid_raw"] = int(payload.bid)
+                    if getattr(payload, "ask", 0):
+                        prices["ask_raw"] = int(payload.ask)
+        elif message.payloadType == ProtoOANewOrderRes().payloadType:
+            with self._lock:
+                order = getattr(payload, "order", None)
+                self._state["last_order"] = {"accepted": True, "order_id": int(order.orderId) if order else None, "status": "resposta recebida"}
+
     def authorize_demo_account(self, account_id: int):
         with self._lock:
             accounts = list(self._state["accounts"])
@@ -129,3 +182,53 @@ class CTraderDemoBridge:
                 self._state["account_authorized"] = False
         reactor.callFromThread(send_auth)
         return {"queued": True, "account_id": int(account_id), "demo_only": True}
+
+    def place_demo_market_order(self, symbol: str, side: str, volume_units: int):
+        symbol = symbol.upper().strip()
+        side = side.upper().strip()
+        if side not in {"BUY", "SELL"}:
+            raise ValueError("Lado deve ser BUY ou SELL")
+        if not isinstance(volume_units, int) or volume_units < 1 or volume_units > 1000:
+            raise ValueError("Volume permitido nesta etapa: 1 a 1000 unidades")
+        with self._lock:
+            state = dict(self._state)
+            client = self._client
+            symbol_id = state["symbol_ids"].get(symbol)
+        if not client or not state["connected"] or not state["application_authorized"]:
+            raise RuntimeError("API cTrader não conectada/autorizada")
+        if not state["account_authorized"] or not state["selected_account_id"]:
+            raise RuntimeError("Selecione e autorize uma conta DEMO antes da ordem")
+        account = next((a for a in state["accounts"] if a["account_id"] == state["selected_account_id"]), None)
+        if not account or account["is_live"]:
+            raise PermissionError("Somente conta DEMO permitida")
+        if not symbol_id:
+            raise ValueError("Ativo não encontrado na conta")
+        if not state["prices"].get(symbol):
+            raise RuntimeError("Aguardando cotação do ativo")
+        req = ProtoOANewOrderReq()
+        req.ctidTraderAccountId = int(state["selected_account_id"])
+        req.symbolId = int(symbol_id)
+        req.orderType = ProtoOAOrderType.MARKET
+        req.tradeSide = ProtoOATradeSide.BUY if side == "BUY" else ProtoOATradeSide.SELL
+        req.volume = int(volume_units) * 100
+        with self._lock:
+            self._state["last_order"] = {"accepted": False, "status": "enviando", "symbol": symbol, "side": side, "volume_units": volume_units}
+        def send():
+            client.send(req).addCallbacks(
+                lambda msg: self._record_order_response(msg, symbol, side, volume_units),
+                self._on_error,
+            )
+        reactor.callFromThread(send)
+        return {"queued": True, "demo_only": True, "symbol": symbol, "side": side, "volume_units": volume_units}
+
+    def _record_order_response(self, message, symbol, side, volume_units):
+        payload = Protobuf.extract(message)
+        with self._lock:
+            order = getattr(payload, "order", None)
+            self._state["last_order"] = {
+                "accepted": message.payloadType == ProtoOANewOrderRes().payloadType,
+                "symbol": symbol, "side": side, "volume_units": volume_units,
+                "order_id": int(order.orderId) if order else None,
+                "status": "resposta recebida",
+            }
+        return message
