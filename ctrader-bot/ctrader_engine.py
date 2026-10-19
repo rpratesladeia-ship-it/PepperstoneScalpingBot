@@ -40,6 +40,15 @@ class CTraderDemoBridge:
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
+        # Initial DEMO protection distances in absolute price units; review per broker/symbol.
+        self._protection_distances = {
+            "XAUUSD": (2.0, 3.0),
+            "EURUSD": (0.0010, 0.0015),
+            "GBPUSD": (0.0010, 0.0015),
+            "USDJPY": (0.10, 0.15),
+            "BTCUSD": (100.0, 150.0),
+            "US30": (10.0, 15.0),
+        }
 
     def snapshot(self):
         with self._lock:
@@ -296,8 +305,24 @@ class CTraderDemoBridge:
         req.orderType = ProtoOAOrderType.MARKET
         req.tradeSide = ProtoOATradeSide.BUY if side == "BUY" else ProtoOATradeSide.SELL
         req.volume = int(volume_units) * 100
+        # Attach server-side SL/TP to entry request. cTrader expects absolute prices.
+        # Open API spot quotes are integer prices scaled by 1e5.
+        quote = state["prices"].get(symbol, {})
+        raw = quote.get("ask_raw" if side == "BUY" else "bid_raw")
+        if not raw:
+            raise RuntimeError("Sem cotação válida para calcular SL/TP; entrada bloqueada.")
+        entry_price = float(raw) / 100000.0
+        sl_distance, tp_distance = self._protection_distances.get(symbol, (None, None))
+        if sl_distance is None or tp_distance is None or sl_distance <= 0 or tp_distance <= 0:
+            raise RuntimeError("SL/TP não configurados para este ativo; entrada bloqueada.")
+        if side == "BUY":
+            req.stopLoss = round(entry_price - sl_distance, 5)
+            req.takeProfit = round(entry_price + tp_distance, 5)
+        else:
+            req.stopLoss = round(entry_price + sl_distance, 5)
+            req.takeProfit = round(entry_price - tp_distance, 5)
         with self._lock:
-            self._state["last_order"] = {"accepted": False, "status": "enviando", "symbol": symbol, "side": side, "volume_units": volume_units}
+            self._state["last_order"] = {"accepted": False, "status": "enviando ordem DEMO com SL/TP", "symbol": symbol, "side": side, "volume_units": volume_units, "stop_loss": req.stopLoss, "take_profit": req.takeProfit}
         def send():
             client.send(req).addCallbacks(
                 lambda msg: self._record_order_response(msg, symbol, side, volume_units),
