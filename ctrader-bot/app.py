@@ -36,7 +36,7 @@ small{color:#a9b6c8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.t
 <div class="grid"><div class="tile"><small>Mercados encontrados na conta</small><br><b id="symbols">Aguardando conexão</b></div><div class="tile"><small>Execução</small><br><b id="execution">BLOQUEADA ATÉ VALIDAR DEMO</b></div></div>
 <a class="btn" href="/connect">Conectar conta cTrader</a>
 <p class="muted"><small>* Os ativos dependem da corretora e da conta conectada. Cripto pode não estar disponível em todos os brokers cTrader.</small></p></div>
-<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
+<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><button id="autoToggle" style="padding:14px;width:100%;border:0;border-radius:10px;background:#f5c66b;color:#17202b;font-weight:800">ATIVAR ENTRADAS AUTOMÁTICAS DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
 <div class="card"><h2>Segurança</h2><p class="muted">Não compartilhe senhas, códigos de autenticação, client secret ou tokens. As credenciais do aplicativo ficam somente nas variáveis secretas do servidor.</p></div>
 </main><script>
 const $=id=>document.getElementById(id);
@@ -46,7 +46,7 @@ async function refresh(){
   $('status').textContent=!d.oauth_authorized?'Não conectado. Toque em Conectar conta cTrader.':!b.connected?'Autorização recebida; conectando à API cTrader…':!b.application_authorized?'Conectado; aguardando autorização do aplicativo…':!b.accounts?.length?'Aplicativo autorizado; aguardando lista de contas…':!b.account_authorized?'Contas carregadas. Selecione uma conta marcada DEMO e valide.': 'Conta DEMO autorizada. Verifique as cotações antes de testar.';
   $('accountInfo').textContent='Conexão: '+(b.connected?'online':'aguardando')+' | App autorizado: '+(b.application_authorized?'sim':'não')+' | Conta autorizada: '+(b.account_authorized?'sim':'não')+(b.last_error?' | Aviso: '+b.last_error:'');
   $('symbols').textContent=(b.symbols||[]).join(', ')||'Nenhum ativo ainda';
-  $('execution').textContent=b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA';
+  $('execution').textContent=b.auto_trading?'AUTOMÁTICA DEMO ATIVA':(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');\n  $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');\n  $('autoToggle').textContent=b.auto_trading?'DESATIVAR ROBÔ AUTOMÁTICO':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO';
   const sel=$('account'), previous=sel.value; sel.innerHTML='';
   (b.accounts||[]).forEach(a=>{const o=document.createElement('option');o.value=a.account_id;o.textContent=a.account_id+' — '+(a.is_live?'REAL (bloqueada)':'DEMO');o.disabled=a.is_live;sel.appendChild(o)});
   if(previous)sel.value=previous; if(b.selected_account_id)sel.value=String(b.selected_account_id);
@@ -54,7 +54,7 @@ async function refresh(){
   if(b.last_order)$('result').textContent='Última ordem: '+JSON.stringify(b.last_order);
  }catch(e){$('status').textContent='Não foi possível consultar o estado do servidor.'}
 }
-$('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
+$('autoToggle').onclick=async()=>{const active=($('autoToggle').textContent||'').startsWith('DESATIVAR');const r=await fetch('/api/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!active})});const t=await r.text();$('result').textContent=t;setTimeout(refresh,500)};\n$('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
 document.querySelectorAll('.trade').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar ordem '+btn.dataset.side+' de '+$('volume').value+' unidade(s) em '+$('symbol').value+' na conta DEMO?'))return;const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:btn.dataset.side,volume_units:Number($('volume').value)})});$('result').textContent=await r.text();setTimeout(refresh,1000)});
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
@@ -118,7 +118,7 @@ class AccountSelection(BaseModel):
     account_id: int
 
 
-class DemoOrder(BaseModel):
+class AutoTradingToggle(BaseModel):\n    enabled: bool\n\n\nclass DemoOrder(BaseModel):
     symbol: str
     side: str
     volume_units: int
@@ -136,6 +136,20 @@ async def select_demo_account(request: Request, selection: AccountSelection):
     except PermissionError:
         return HTMLResponse("Conta real bloqueada. Este painel aceita somente DEMO.", status_code=403)
     except (ValueError, RuntimeError) as exc:
+        return HTMLResponse(str(exc), status_code=400)
+
+
+@app.post("/api/auto")
+async def toggle_auto_trading(request: Request, toggle: AutoTradingToggle):
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if not bridge:
+        return HTMLResponse("Conecte a conta cTrader primeiro.", status_code=401)
+    try:
+        return bridge.set_auto_trading(toggle.enabled)
+    except PermissionError as exc:
+        return HTMLResponse(str(exc), status_code=403)
+    except RuntimeError as exc:
         return HTMLResponse(str(exc), status_code=400)
 
 
