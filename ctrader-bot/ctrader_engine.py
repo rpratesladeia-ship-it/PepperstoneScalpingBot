@@ -42,6 +42,10 @@ class CTraderDemoBridge:
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
+        # DMS(14) tick-based prototype; not canonical OHLC ADX.
+        self._dms_period = 14
+        self._dms_min_strength = 20.0
+        self._state["dms_filter"] = {"enabled": True, "period": 14, "min_strength": 20.0, "method": "tick approximation", "last": {}}
         # Initial DEMO protection distances in absolute price units; review per broker/symbol.
         # Absolute price distances; DEMO-only until each broker symbol is validated.
         self._protection_distances = {
@@ -234,9 +238,27 @@ class CTraderDemoBridge:
             self._state["auto_status"] = "Ativo: aguardando cruzamento de médias" if enabled else "Desativado"
         return {"auto_trading": self._auto_enabled, "demo_only": True}
 
+    def _calculate_dms14_tick(self, prices):
+        """Approximate directional movement from ticks; not canonical OHLC ADX."""
+        period = self._dms_period
+        if len(prices) < period + 1:
+            return None
+        moves = [float(prices[i]) - float(prices[i - 1]) for i in range(len(prices) - period, len(prices))]
+        plus = sum(move for move in moves if move > 0)
+        minus = sum(-move for move in moves if move < 0)
+        total = plus + minus
+        if total <= 0:
+            return {"di_plus": 0.0, "di_minus": 0.0, "adx": 0.0, "direction": "NEUTRAL"}
+        di_plus = 100.0 * plus / total
+        di_minus = 100.0 * minus / total
+        strength = 100.0 * abs(plus - minus) / total
+        direction = "BUY" if di_plus > di_minus else "SELL" if di_minus > di_plus else "NEUTRAL"
+        return {"di_plus": round(di_plus, 2), "di_minus": round(di_minus, 2),
+                "adx": round(strength, 2), "direction": direction}
+
     def _evaluate_auto_entry(self, symbol: str, history):
-        # EMA crossover on incoming ticks. Guarded, one position at a time, cooldown.
-        if not self._auto_enabled or len(history) < 22:
+        # Preserve existing crossover, adding DMS(14) directional confirmation.
+        if not self._auto_enabled or len(history) < max(22, self._dms_period + 1):
             return
         import time
         now = time.time()
@@ -261,10 +283,21 @@ class CTraderDemoBridge:
                 side = "BUY"
             elif fast_prev >= slow_prev and fast_now < slow_now:
                 side = "SELL"
+            dms = self._calculate_dms14_tick(prices)
+            if dms:
+                self._state["dms_filter"]["last"][symbol] = dms
             if not side:
                 return
+            if not dms or dms["direction"] != side or dms["adx"] < self._dms_min_strength:
+                self._state["auto_status"] = (
+                    "Entrada " + side + " bloqueada pelo DMS 14 em " + symbol
+                    + " (DI+ " + str(dms["di_plus"] if dms else "—")
+                    + " / DI− " + str(dms["di_minus"] if dms else "—")
+                    + " / força " + str(dms["adx"] if dms else "—") + ")"
+                )
+                return
             self._auto_last_trade_at[symbol] = now
-            self._state["auto_status"] = "Sinal " + side + " em " + symbol + "; enviando ordem demo"
+            self._state["auto_status"] = "Sinal " + side + " confirmado pelo filtro DMS 14 em " + symbol + "; enviando ordem demo"
         try:
             # One minimal unit; this is demo-only and intentionally throttled.
             self.place_demo_market_order(symbol, side, 1)
