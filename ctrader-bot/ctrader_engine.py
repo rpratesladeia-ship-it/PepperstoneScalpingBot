@@ -43,14 +43,24 @@ class CTraderDemoBridge:
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
         # Initial DEMO protection distances in absolute price units; review per broker/symbol.
+        # Absolute price distances; DEMO-only until each broker symbol is validated.
         self._protection_distances = {
-            "XAUUSD": (2.0, 3.0),
-            "EURUSD": (0.0010, 0.0015),
-            "GBPUSD": (0.0010, 0.0015),
-            "USDJPY": (0.10, 0.15),
-            "BTCUSD": (100.0, 150.0),
-            "US30": (10.0, 15.0),
+            "XAUUSD": (2.0, 3.0), "XAGUSD": (0.10, 0.15),
+            "EURUSD": (0.0010, 0.0015), "GBPUSD": (0.0010, 0.0015),
+            "USDJPY": (0.10, 0.15), "USDCHF": (0.0010, 0.0015),
+            "USDCAD": (0.0010, 0.0015), "AUDUSD": (0.0010, 0.0015),
+            "NZDUSD": (0.0010, 0.0015), "EURGBP": (0.0010, 0.0015),
+            "EURJPY": (0.10, 0.15), "GBPJPY": (0.10, 0.15),
+            "AUDJPY": (0.10, 0.15), "EURAUD": (0.0015, 0.0020),
+            "US30": (10.0, 15.0), "NAS100": (15.0, 25.0),
+            "SPX500": (5.0, 8.0), "GER40": (15.0, 25.0),
+            "UK100": (10.0, 15.0), "JPN225": (50.0, 80.0),
+            "BTCUSD": (100.0, 150.0), "ETHUSD": (10.0, 15.0),
+            "LTCUSD": (5.0, 8.0), "BCHUSD": (10.0, 15.0),
+            "ADAUSD": (0.02, 0.03),
         }
+        self._state["configured_auto_symbols"] = sorted(self._protection_distances)
+        self._state["symbol_digits"] = {}
 
     def snapshot(self):
         with self._lock:
@@ -167,15 +177,19 @@ class CTraderDemoBridge:
             with self._lock:
                 self._state["open_positions"] = len(getattr(payload, "position", []))
         elif message.payloadType == ProtoOASymbolsListRes().payloadType:
-            wanted = {"XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSD", "US30"}
+            wanted = set(self._protection_distances)
             found = {}
+            digits = {}
             for symbol in getattr(payload, "symbol", []):
                 name = str(getattr(symbol, "symbolName", "")).upper()
                 if name in wanted:
                     found[name] = int(symbol.symbolId)
+                    digits[name] = int(getattr(symbol, "digits", 5))
             with self._lock:
                 self._state["symbol_ids"] = found
+                self._state["symbol_digits"] = digits
                 self._state["symbols"] = sorted(found.keys())
+                self._state["unavailable_symbols"] = sorted(wanted - set(found.keys()))
             for symbol_id in found.values():
                 req = ProtoOASubscribeSpotsReq()
                 req.ctidTraderAccountId = int(self._state["selected_account_id"])
@@ -324,16 +338,17 @@ class CTraderDemoBridge:
         raw = quote.get("ask_raw" if side == "BUY" else "bid_raw")
         if not raw:
             raise RuntimeError("Sem cotação válida para calcular SL/TP; entrada bloqueada.")
-        entry_price = float(raw) / 100000.0
+        digits = int(state.get("symbol_digits", {}).get(symbol, 5))
+        entry_price = float(raw) / (10 ** digits)
         sl_distance, tp_distance = self._protection_distances.get(symbol, (None, None))
         if sl_distance is None or tp_distance is None or sl_distance <= 0 or tp_distance <= 0:
             raise RuntimeError("SL/TP não configurados para este ativo; entrada bloqueada.")
         if side == "BUY":
-            req.stopLoss = round(entry_price - sl_distance, 5)
-            req.takeProfit = round(entry_price + tp_distance, 5)
+            req.stopLoss = round(entry_price - sl_distance, digits)
+            req.takeProfit = round(entry_price + tp_distance, digits)
         else:
-            req.stopLoss = round(entry_price + sl_distance, 5)
-            req.takeProfit = round(entry_price - tp_distance, 5)
+            req.stopLoss = round(entry_price + sl_distance, digits)
+            req.takeProfit = round(entry_price - tp_distance, digits)
         with self._lock:
             self._state["last_order"] = {"accepted": False, "status": "enviando ordem DEMO com SL/TP", "symbol": symbol, "side": side, "volume_units": volume_units, "stop_loss": req.stopLoss, "take_profit": req.takeProfit}
         def send():
