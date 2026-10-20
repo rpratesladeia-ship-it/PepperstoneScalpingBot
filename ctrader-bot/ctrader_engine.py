@@ -42,6 +42,13 @@ class CTraderDemoBridge:
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
+        # Financial trailing protection per open position, account deposit currency.
+        self._profit_arm_usd = 0.20
+        self._profit_retrace_usd = 0.05
+        self._tracked_positions = {}
+        self._trail_peak_by_position = {}
+        self._trail_closing_positions = set()
+        self._pnl_poll_scheduled = False
         self._reconnect_attempt = 0
         self._reconnect_scheduled = False
         # DMS(14) tick-based prototype; not canonical OHLC ADX.
@@ -211,8 +218,23 @@ class CTraderDemoBridge:
                 self._state["balance"] = float(payload.trader.balance) / 100.0
                 self._state["equity"] = float(payload.trader.balance) / 100.0
         elif message.payloadType == ProtoOAReconcileRes().payloadType:
+            positions = {}
+            for position in getattr(payload, "position", []):
+                trade_data = getattr(position, "tradeData", None)
+                position_id = int(getattr(position, "positionId", 0) or getattr(trade_data, "positionId", 0))
+                volume = int(getattr(trade_data, "volume", 0)) if trade_data else 0
+                if position_id and volume > 0:
+                    positions[position_id] = {"volume": volume}
             with self._lock:
-                self._state["open_positions"] = len(getattr(payload, "position", []))
+                self._tracked_positions = positions
+                self._state["open_positions"] = len(positions)
+                live_ids = set(positions)
+                self._trail_peak_by_position = {pid: peak for pid, peak in self._trail_peak_by_position.items() if pid in live_ids}
+                self._trail_closing_positions.intersection_update(live_ids)
+            self._schedule_position_pnl_poll()
+        elif message.payloadType == ProtoOAGetPositionUnrealizedPnLRes().payloadType:
+            self._handle_position_pnl(payload)
+            self._schedule_position_pnl_poll()
         elif message.payloadType == ProtoOASymbolsListRes().payloadType:
             wanted = set(self._protection_distances)
             found = {}
@@ -252,7 +274,88 @@ class CTraderDemoBridge:
             with self._lock:
                 order = getattr(payload, "order", None)
                 self._state["last_order"] = {"accepted": True, "order_id": int(order.orderId) if order else None, "status": "resposta recebida"}
+            account_id = self._state.get("selected_account_id")
+            if account_id:
+                reconcile = ProtoOAReconcileReq()
+                reconcile.ctidTraderAccountId = int(account_id)
+                client.send(reconcile).addErrback(self._on_error)
 
+    def _schedule_position_pnl_poll(self):
+        with self._lock:
+            if self._pnl_poll_scheduled or not self._state.get("account_authorized"):
+                return
+            self._pnl_poll_scheduled = True
+        reactor.callLater(1.0, self._request_position_pnl)
+
+    def _request_position_pnl(self):
+        with self._lock:
+            self._pnl_poll_scheduled = False
+            client = self._client
+            account_id = self._state.get("selected_account_id")
+            ready = bool(client and self._state.get("connected") and self._state.get("account_authorized") and account_id)
+        if not ready:
+            return
+        req = ProtoOAGetPositionUnrealizedPnLReq()
+        req.ctidTraderAccountId = int(account_id)
+        client.send(req).addErrback(self._on_error)
+
+    @staticmethod
+    def _trail_should_close(peak_profit: float, current_profit: float, activation: float = 0.20, retrace: float = 0.05) -> bool:
+        return peak_profit >= activation and (peak_profit - current_profit) >= retrace
+
+    def _handle_position_pnl(self, payload):
+        money_digits = int(getattr(payload, "moneyDigits", 2))
+        divisor = float(10 ** money_digits)
+        for item in getattr(payload, "positionUnrealizedPnL", []):
+            position_id = int(getattr(item, "positionId", 0))
+            current_profit = float(getattr(item, "netUnrealizedPnL", 0)) / divisor
+            with self._lock:
+                if position_id not in self._tracked_positions or position_id in self._trail_closing_positions:
+                    continue
+                peak = max(self._trail_peak_by_position.get(position_id, current_profit), current_profit)
+                self._trail_peak_by_position[position_id] = peak
+                armed = peak >= self._profit_arm_usd
+                self._state["profit_trailing"] = {
+                    "enabled": True, "activation_usd": self._profit_arm_usd, "retrace_usd": self._profit_retrace_usd,
+                    "positions": len(self._tracked_positions),
+                    "armed_positions": sum(1 for p in self._trail_peak_by_position.values() if p >= self._profit_arm_usd),
+                    "last_position_id": position_id, "last_profit_usd": round(current_profit, 4),
+                    "peak_profit_usd": round(peak, 4), "armed": armed,
+                }
+                should_close = self._trail_should_close(peak, current_profit, self._profit_arm_usd, self._profit_retrace_usd)
+                if should_close:
+                    self._trail_closing_positions.add(position_id)
+                    volume = self._tracked_positions[position_id]["volume"]
+                    account_id = self._state.get("selected_account_id")
+                    client = self._client
+                    self._state["auto_status"] = "Trailing financeiro: solicitando fechamento DEMO da posição " + str(position_id)
+            if should_close:
+                if not client or not account_id or not volume:
+                    with self._lock:
+                        self._trail_closing_positions.discard(position_id)
+                        self._state["last_error"] = "Trailing acionado, mas não foi possível confirmar volume/conta para fechar."
+                    continue
+                req = ProtoOAClosePositionReq()
+                req.ctidTraderAccountId = int(account_id)
+                req.positionId = int(position_id)
+                req.volume = int(volume)
+                def record_close_response(message, pid=position_id, peak_value=peak, current_value=current_profit):
+                    with self._lock:
+                        self._state["last_order"] = {
+                            "accepted": message.payloadType == ProtoOAExecutionEvent().payloadType,
+                            "action": "trailing_close", "position_id": pid,
+                            "peak_profit_usd": round(peak_value, 4), "profit_at_request_usd": round(current_value, 4),
+                            "status": "resposta de fechamento recebida",
+                        }
+                        self._trail_closing_positions.discard(pid)
+                    return message
+                def close_failed(failure, pid=position_id):
+                    with self._lock:
+                        self._trail_closing_positions.discard(pid)
+                        self._state["last_error"] = "Falha ao solicitar fechamento pelo trailing financeiro."
+                    return self._on_error(failure)
+                client.send(req).addCallbacks(record_close_response, close_failed)
+                log.info("Financial trailing requested DEMO close position=%s peak=%.4f current=%.4f", position_id, peak, current_profit)
 
     def set_auto_trading(self, enabled: bool):
         """Enable only guarded demo entries; never permits a live account."""
@@ -269,6 +372,8 @@ class CTraderDemoBridge:
             self._auto_enabled = bool(enabled)
             self._state["auto_trading"] = self._auto_enabled
             self._state["auto_status"] = "Ativo: aguardando cruzamento de médias" if enabled else "Desativado"
+        if self._state.get("account_authorized"):
+            self._schedule_position_pnl_poll()
         return {"auto_trading": self._auto_enabled, "demo_only": True}
 
     def _calculate_dms14_tick(self, prices):
