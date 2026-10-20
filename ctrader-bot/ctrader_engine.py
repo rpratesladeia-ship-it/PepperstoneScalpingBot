@@ -1,6 +1,7 @@
 """Minimal cTrader Open API session bridge. Demo-only; order submission is intentionally not exposed yet."""
 import threading
 import logging
+import os
 from typing import Any
 
 log = logging.getLogger("trader-ctrader")
@@ -10,6 +11,7 @@ from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import *
 from twisted.internet import reactor
+from ai_filter import load_model, evaluate_ml_gate
 
 
 class CTraderDemoBridge:
@@ -42,6 +44,16 @@ class CTraderDemoBridge:
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
+        # Optional ML gate is OFF by default; no trained model is shipped.
+        self._ai_filter_enabled = os.getenv("AI_FILTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        self._ai_model = load_model(os.getenv("AI_MODEL_PATH", "ctrader-bot/ai_model.json")) if self._ai_filter_enabled else None
+        self._state["ai_filter"] = {
+            "enabled": self._ai_filter_enabled,
+            "model_loaded": bool(self._ai_model),
+            "status": "Modelo carregado; filtro experimental ativo" if self._ai_model else
+                      ("Ativado sem modelo: entradas serão bloqueadas" if self._ai_filter_enabled else "Desativado por padrão; sem modelo validado"),
+            "last": {},
+        }
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -434,6 +446,19 @@ class CTraderDemoBridge:
                     + " / força " + str(dms["adx"] if dms else "—") + ")"
                 )
                 return
+            if self._ai_filter_enabled:
+                try:
+                    ai_allowed, ai_probability, ai_reason = evaluate_ml_gate(prices, side, self._ai_model)
+                except (ValueError, TypeError, KeyError) as exc:
+                    ai_allowed, ai_probability, ai_reason = False, None, "Falha no filtro IA; entrada bloqueada"
+                    log.warning("AI filter failed closed for %s: %s", symbol, type(exc).__name__)
+                self._state["ai_filter"]["last"] = {
+                    "symbol": symbol, "side": side, "probability_up": round(ai_probability, 4) if ai_probability is not None else None,
+                    "allowed": bool(ai_allowed), "reason": ai_reason,
+                }
+                if not ai_allowed:
+                    self._state["auto_status"] = "Entrada " + side + " bloqueada pelo filtro IA em " + symbol + ": " + ai_reason
+                    return
             self._auto_last_trade_at[symbol] = now
             self._state["auto_status"] = "Sinal " + side + " confirmado pelo filtro DMS 14 em " + symbol + "; enviando ordem demo"
         try:
