@@ -1,13 +1,15 @@
 # Meu Trader Multimercado — início cTrader
 
-Starter mobile-first for official cTrader Open API OAuth authorization. This is a connection scaffold, not a completed trading bot.
+Painel mobile-first do Meu Trader Multimercado para cTrader Open API, com conexão DEMO, sinais técnicos e execução limitada à conta DEMO.
 
 ## Current scope
 - Portuguese responsive login/connect page.
 - OAuth 2.0 authorization redirect with `scope=accounts` (read-only permission).
 - OAuth `state` validation and authorization-code exchange.
 - Health/status endpoints.
-- Order execution is hard-disabled; no orders are sent.
+- Execução automática de ordens DEMO existe na versão atual, mas não deve ser considerada validada até concluir os testes de execução e fechamento.
+- Filtro de Machine Learning experimental opcional; desativado por padrão e bloqueia entradas se ativado sem modelo válido.
+- Testes automatizados de estratégia e filtro de IA via GitHub Actions.
 
 ## Setup
 1. Create a cTrader ID and a demo account with a cTrader-affiliated broker. Confirm the broker accepts your residence and offers the instruments you want.
@@ -18,10 +20,11 @@ Starter mobile-first for official cTrader Open API OAuth authorization. This is 
 6. Open the service URL on Android and tap **Conectar conta cTrader**. Approve only the account access you intend to grant.
 
 ## Important limitations
-- OAuth approval alone does not prove a trading connection or identify a demo account. Account-list validation and the official Open API protocol/SDK integration are still pending.
-- This starter requests read-only `accounts` scope. Do not change to `trading` until demo-account validation and testing are complete.
+- OAuth approval alone does not prove a working trading connection. Confirm the account is DEMO and inspect the execution result in the broker.
 - Tokens are held in process memory only in this prototype and are lost on restart. Do not deploy as a production multi-user service.
-- Market scanning, backtesting, risk controls, trade history, and execution are not implemented yet.
+- The current DMS14 is a tick-based approximation, not canonical OHLC ADX/DMS.
+- SL/TP distances and financial trailing must be verified per broker symbol, account currency, and actual execution. A server-side trailing monitor is not a guaranteed broker-side stop.
+- The ML filter is an experimental logistic-regression baseline, not proof of profitable AI. No model or market dataset is shipped; do not enable it until it is trained and validated.
 - Very short intervals such as 3–5 seconds are not guaranteed; quotes, broker instruments, spread, latency, and API rate limits matter.
 
 Official docs:
