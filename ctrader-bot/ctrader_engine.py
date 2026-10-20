@@ -42,6 +42,8 @@ class CTraderDemoBridge:
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         self._auto_max_positions = 1
+        self._reconnect_attempt = 0
+        self._reconnect_scheduled = False
         # DMS(14) tick-based prototype; not canonical OHLC ADX.
         self._dms_period = 14
         self._dms_min_strength = 20.0
@@ -97,6 +99,9 @@ class CTraderDemoBridge:
     def _on_connected(self, client):
         with self._lock:
             self._state["connected"] = True
+            self._reconnect_attempt = 0
+            self._reconnect_scheduled = False
+            self._state["last_error"] = None
         req = ProtoOAApplicationAuthReq()
         req.clientId = self.client_id
         req.clientSecret = self.client_secret
@@ -105,7 +110,31 @@ class CTraderDemoBridge:
     def _on_disconnected(self, _client, reason):
         with self._lock:
             self._state.update(connected=False, application_authorized=False,
-                               account_authorized=False, last_error="Conexão cTrader interrompida")
+                               account_authorized=False, last_error="Conexão cTrader interrompida; tentando reconectar")
+            self._schedule_reconnect_locked()
+
+    def _schedule_reconnect_locked(self):
+        if self._reconnect_scheduled or not self._token:
+            return
+        self._reconnect_attempt += 1
+        delay = min(60, 2 ** min(self._reconnect_attempt, 6))
+        self._reconnect_scheduled = True
+        self._state["reconnect_attempt"] = self._reconnect_attempt
+        self._state["reconnect_in_seconds"] = delay
+        reactor.callLater(delay, self._restart_client_after_disconnect)
+
+    def _restart_client_after_disconnect(self):
+        with self._lock:
+            self._reconnect_scheduled = False
+            if self._state.get("connected"):
+                return
+        try:
+            self._start_client()
+        except Exception as exc:
+            log.warning("cTrader reconnect attempt failed: %s", type(exc).__name__)
+            with self._lock:
+                self._state["last_error"] = "Falha ao reconectar; nova tentativa programada"
+                self._schedule_reconnect_locked()
 
     def _on_error(self, failure):
         try:
@@ -162,6 +191,10 @@ class CTraderDemoBridge:
         elif message.payloadType == ProtoOAAccountAuthRes().payloadType:
             with self._lock:
                 self._state["account_authorized"] = True
+                self._state["last_error"] = None
+                if self._auto_enabled:
+                    self._state["auto_trading"] = True
+                    self._state["auto_status"] = "Conexão restaurada; automação DEMO retomada após revalidar a conta"
 
             trader = ProtoOATraderReq()
             trader.ctidTraderAccountId = int(payload.ctidTraderAccountId)
@@ -320,16 +353,25 @@ class CTraderDemoBridge:
             raise PermissionError("Conta REAL bloqueada: este robô só permite DEMO")
         if not client or not self._state["application_authorized"] or not token:
             raise RuntimeError("Conexão cTrader ainda não está autorizada")
-        def send_auth():
-            req = ProtoOAAccountAuthReq()
-            req.ctidTraderAccountId = int(account_id)
-            req.accessToken = token
-            client.send(req).addErrback(self._on_error)
-            with self._lock:
-                self._state["selected_account_id"] = int(account_id)
-                self._state["account_authorized"] = False
-        reactor.callFromThread(send_auth)
+        with self._lock:
+            self._state["selected_account_id"] = int(account_id)
+            self._state["account_authorized"] = False
+        reactor.callFromThread(self._send_account_auth, int(account_id))
         return {"queued": True, "account_id": int(account_id), "demo_only": True}
+
+    def _send_account_auth(self, account_id: int):
+        with self._lock:
+            client = self._client
+            token = self._token
+            ready = bool(self._state.get("connected") and self._state.get("application_authorized"))
+        if not client or not token or not ready:
+            with self._lock:
+                self._state["last_error"] = "Reconexão pendente; conta DEMO será revalidada quando a API voltar"
+            return
+        req = ProtoOAAccountAuthReq()
+        req.ctidTraderAccountId = int(account_id)
+        req.accessToken = token
+        client.send(req).addErrback(self._on_error)
 
     def place_demo_market_order(self, symbol: str, side: str, volume_units: int):
         symbol = symbol.upper().strip()
