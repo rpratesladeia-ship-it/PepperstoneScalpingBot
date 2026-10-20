@@ -35,7 +35,7 @@ def build_rows(closes, horizon, cost_threshold):
     rows, labels = [], []
     for end in range(22, len(closes) - horizon):
         history = closes[:end]
-        future_return = closes[end + horizon] / closes[end] - 1.0
+        future_return = closes[end + horizon - 1] / closes[end - 1] - 1.0
         rows.append(extract_features(history))
         labels.append(1 if future_return > cost_threshold else 0)
     return rows, labels
