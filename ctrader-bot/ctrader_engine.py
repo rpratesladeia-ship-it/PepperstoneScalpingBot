@@ -358,8 +358,12 @@ class CTraderDemoBridge:
                 client.send(req).addCallbacks(record_close_response, close_failed)
                 log.info("Financial trailing requested DEMO close position=%s peak=%.4f current=%.4f", position_id, peak, current_profit)
 
-    def set_auto_trading(self, enabled: bool):
-        """Enable only guarded demo entries; never permits a live account."""
+    def set_auto_trading(self, enabled: bool, duration_minutes: int = 60):
+        """Enable guarded DEMO entries with an automatic stop timer."""
+        import time
+        duration_minutes = int(duration_minutes)
+        if enabled and not 1 <= duration_minutes <= 1440:
+            raise ValueError("O temporizador deve ficar entre 1 e 1440 minutos.")
         with self._lock:
             if enabled:
                 account = next((a for a in self._state["accounts"]
@@ -370,12 +374,42 @@ class CTraderDemoBridge:
                     raise PermissionError("Automação bloqueada: somente conta DEMO.")
                 if not self._state["symbols"]:
                     raise RuntimeError("Nenhum ativo disponível para a automação.")
-            self._auto_enabled = bool(enabled)
-            self._state["auto_trading"] = self._auto_enabled
-            self._state["auto_status"] = "Ativo: aguardando cruzamento de médias" if enabled else "Desativado"
+                self._auto_enabled = True
+                started = time.time()
+                deadline = started + duration_minutes * 60
+                self._state.update(auto_trading=True, auto_started_at=started,
+                                   auto_duration_seconds=duration_minutes * 60,
+                                   auto_deadline=deadline,
+                                   auto_status="Ativo: temporizador iniciado")
+            else:
+                self._auto_enabled = False
+                self._state.update(auto_trading=False, auto_started_at=None,
+                                   auto_duration_seconds=0, auto_deadline=None,
+                                   auto_status="Desativado pelo operador")
+                return {"auto_trading": False, "demo_only": True, "timer_active": False}
+        reactor.callFromThread(self._schedule_auto_shutdown, duration_minutes * 60)
         if self._state.get("account_authorized"):
             self._schedule_position_pnl_poll()
-        return {"auto_trading": self._auto_enabled, "demo_only": True}
+        return {"auto_trading": True, "demo_only": True, "timer_active": True,
+                "duration_minutes": duration_minutes}
+
+    def _schedule_auto_shutdown(self, delay_seconds: int):
+        reactor.callLater(delay_seconds, self._auto_timer_expired)
+
+    def _auto_timer_expired(self):
+        with self._lock:
+            if not self._auto_enabled:
+                return
+            deadline = self._state.get("auto_deadline")
+            import time
+            if deadline is not None and time.time() < deadline:
+                reactor.callLater(max(1, deadline - time.time()), self._auto_timer_expired)
+                return
+            self._auto_enabled = False
+            self._state.update(auto_trading=False, auto_started_at=None,
+                               auto_duration_seconds=0, auto_deadline=None,
+                               auto_status="Temporizador encerrado: novas entradas automáticas desligadas")
+        log.info("Automatic DEMO entries stopped by runtime timer")
 
     def _calculate_dms14_tick(self, prices):
         """Approximate directional movement from ticks; not canonical OHLC ADX."""
