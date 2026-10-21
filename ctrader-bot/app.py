@@ -146,6 +146,16 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
             return HTMLResponse("<h2>Autorização não concluída</h2><p>O cTrader não retornou um token válido. Confira a configuração do aplicativo.</p><a href='/'>Voltar</a>",status_code=502)
         sid = request.session.get("sid") or secrets.token_urlsafe(32)
         request.session["sid"] = sid
+        existing_bridge = BRIDGES.get(sid)
+        if existing_bridge is not None:
+            # Do not create a second TCP/Open API client for the same browser session.
+            # Repeated OAuth callbacks previously overwrote BRIDGES[sid] while leaving
+            # the old client alive, which could cause duplicate logins and timeouts.
+            snapshot = existing_bridge.snapshot()
+            if snapshot.get("connected") or snapshot.get("application_authorized"):
+                log.info("OAuth callback received for a session with an existing cTrader bridge; reusing it")
+                TOKENS[sid] = {"access_token":access_token,"refresh_token":data.get("refreshToken"),"expires_in":data.get("expiresIn")}
+                return RedirectResponse("/",status_code=303)
         TOKENS[sid] = {"access_token":access_token,"refresh_token":data.get("refreshToken"),"expires_in":data.get("expiresIn")}
         bridge = CTraderDemoBridge(CLIENT_ID, CLIENT_SECRET)
         BRIDGES[sid] = bridge
