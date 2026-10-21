@@ -619,6 +619,9 @@ class CTraderDemoBridge:
         else:
             req.stopLoss = round(entry_price + sl_distance, digits)
             req.takeProfit = round(entry_price - tp_distance, digits)
+        record_event("order_queued", symbol=symbol, side=side, volume_units=volume_units,
+                     entry_price=entry_price, stop_loss=req.stopLoss, take_profit=req.takeProfit,
+                     open_positions=int(state.get("open_positions", 0)))
         with self._lock:
             self._state["last_order"] = {"accepted": False, "status": "enviando ordem DEMO com SL/TP", "symbol": symbol, "side": side, "volume_units": volume_units, "stop_loss": req.stopLoss, "take_profit": req.takeProfit}
         def send():
