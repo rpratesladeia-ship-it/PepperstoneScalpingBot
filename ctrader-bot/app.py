@@ -36,7 +36,7 @@ small{color:#a9b6c8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.t
 <div class="grid"><div class="tile"><small>Mercados encontrados na conta</small><br><b id="symbols">Aguardando conexão</b></div><div class="tile"><small>Execução</small><br><b id="execution">BLOQUEADA ATÉ VALIDAR DEMO</b></div></div>
 <a class="btn" href="/connect">Conectar conta cTrader</a>
 <p class="muted"><small>* Os ativos dependem da corretora e da conta conectada. Cripto pode não estar disponível em todos os brokers cTrader.</small></p></div>
-<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="1440" step="1" value="60" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><button id="autoToggle" style="padding:14px;width:100%;border:0;border-radius:10px;background:#f5c66b;color:#17202b;font-weight:800">ATIVAR ENTRADAS AUTOMÁTICAS DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
+<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><h3>Análise da IA / estratégia</h3><p id="analysisStatus" class="muted">Aguardando sinais registrados…</p><a class="btn" href="/api/backup" download="meu-trader-backup.json">BAIXAR BACKUP PARA ME ENVIAR</a><p class="muted"><small>Relatório explicável dos sinais e filtros. Não é um modelo treinado nem prevê lucro. Baixe backups periodicamente.</small></p><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="1440" step="1" value="60" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><button id="autoToggle" style="padding:14px;width:100%;border:0;border-radius:10px;background:#f5c66b;color:#17202b;font-weight:800">ATIVAR ENTRADAS AUTOMÁTICAS DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
 <div class="card"><h2>Segurança</h2><p class="muted">Não compartilhe senhas, códigos de autenticação, client secret ou tokens. As credenciais do aplicativo ficam somente nas variáveis secretas do servidor.</p></div>
 </main><script>
 const $=id=>document.getElementById(id);
@@ -50,6 +50,7 @@ async function refresh(){
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');
   const ai=b.ai_filter||{};
   $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo carregado':'ATIVADO, mas sem modelo treinado; entradas bloqueadas'):'desligado — modelo ainda não treinado');
+  try{const ar=await fetch('/api/analysis',{cache:'no-store'});const ad=await ar.json();$('analysisStatus').textContent='Eventos: '+ad.events_total+' | sinais: '+ad.signals_logged+' | decisões: '+JSON.stringify(ad.signal_decisions||{})+' | ativos: '+JSON.stringify(ad.signals_by_symbol||{})+' | '+ad.mode;}catch(_){$('analysisStatus').textContent='Análise indisponível no momento.'}
   $('autoToggle').textContent=b.auto_trading?'DESATIVAR ROBÔ AUTOMÁTICO':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO';
   if(b.auto_trading && b.auto_deadline){
     const left=Math.max(0,Math.ceil(b.auto_deadline-Date.now()/1000));
@@ -88,6 +89,25 @@ async def home(request: Request):
 @app.get("/health")
 async def health():
     return {"status":"online","app":APP_NAME,"oauth_configured":bool(CLIENT_ID and CLIENT_SECRET and REDIRECT_URI),"order_execution":False,"mode":"demo_only"}
+
+@app.get("/api/analysis")
+async def api_analysis(request: Request):
+    from strategy_telemetry import analysis_report
+    sid = request.session.get("sid")
+    if not sid or sid not in TOKENS:
+        return {"mode": "aguardando conexão", "events_total": 0, "signals_logged": 0, "signal_decisions": {}, "signals_by_symbol": {}}
+    return analysis_report()
+
+
+@app.get("/api/backup")
+async def download_backup(request: Request):
+    from strategy_telemetry import export_backup
+    from fastapi.responses import JSONResponse
+    sid = request.session.get("sid")
+    if not sid or sid not in TOKENS:
+        return HTMLResponse("Conecte a conta DEMO antes de baixar o backup.", status_code=401)
+    return JSONResponse(export_backup(), headers={"Content-Disposition": "attachment; filename=meu-trader-backup.json"})
+
 
 @app.get("/api/status")
 async def api_status(request: Request):
