@@ -36,7 +36,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": None, "min_free_margin": 25.0},
+            "risk_limits": {"max_positions": 15, "min_free_margin": 25.0},
         }
         self._thread = None
         self._auto_enabled = False
@@ -44,7 +44,7 @@ class CTraderDemoBridge:
         self._auto_history = {}
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
-        self._auto_max_positions = None  # no fixed position-count cap; margin protection remains active
+        self._auto_max_positions = 15  # conservative cap retained until risk validation
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -468,7 +468,7 @@ class CTraderDemoBridge:
         import time
         now = time.time()
         with self._lock:
-            if not self._state["account_authorized"] or (self._state["risk_limits"].get("max_positions") is not None and self._state["open_positions"] >= self._state["risk_limits"]["max_positions"]):
+            if not self._state["account_authorized"] or self._state["open_positions"] >= int(self._state["risk_limits"].get("max_positions", 15)):
                 self._state["auto_status"] = "Entrada bloqueada: limite de posições atingido ou conta não autorizada"
                 return
             free_margin = self._state.get("free_margin")
@@ -493,13 +493,13 @@ class CTraderDemoBridge:
                 self._state["dms_filter"]["last"][symbol] = dms
             if not side:
                 return
-            record_event("signal", symbol=symbol, side=side,
+            record_event("signal_candidate", symbol=symbol, side=side,
                          fast_previous=round(fast_prev, 6), slow_previous=round(slow_prev, 6),
                          fast_current=round(fast_now, 6), slow_current=round(slow_now, 6),
                          dms=dms, ai_enabled=self._ai_enabled, decision="candidate",
                          price_raw=prices[-1], cooldown_seconds=self._auto_cooldown_seconds)
             if not dms or dms["direction"] != side or dms["adx"] < self._dms_min_strength:
-                record_event("signal", symbol=symbol, side=side, decision="blocked_dms", dms=dms, price_raw=prices[-1])
+                record_event("filter_decision", symbol=symbol, side=side, decision="blocked_dms", dms=dms, price_raw=prices[-1])
                 self._state["auto_status"] = (
                     "Entrada " + side + " bloqueada pelo DMS 14 em " + symbol
                     + " (DI+ " + str(dms["di_plus"] if dms else "—")
@@ -515,13 +515,13 @@ class CTraderDemoBridge:
                 self._state["ai_filter"]["last"] = {"symbol": symbol, "side": side,
                     "probability_up": round(probability, 4) if probability is not None else None,
                     "reason": reason}
-                record_event("signal", symbol=symbol, side=side, decision="ai_allowed" if allowed else "blocked_ai",
+                record_event("filter_decision", symbol=symbol, side=side, decision="ai_allowed" if allowed else "blocked_ai",
                              probability_up=probability, ai_reason=reason, dms=dms, price_raw=prices[-1])
                 if not allowed:
                     self._state["auto_status"] = "Entrada " + side + " bloqueada pela IA em " + symbol + ": " + reason
                     return
             self._auto_last_trade_at[symbol] = now
-            record_event("signal", symbol=symbol, side=side, decision="approved_for_order", dms=dms,
+            record_event("filter_decision", symbol=symbol, side=side, decision="approved_for_order", dms=dms,
                          price_raw=prices[-1], ai_enabled=self._ai_enabled)
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
         try:
@@ -589,9 +589,9 @@ class CTraderDemoBridge:
             raise ValueError("Ativo não encontrado na conta")
         if not state["prices"].get(symbol):
             raise RuntimeError("Aguardando cotação do ativo")
-        max_positions = state.get("risk_limits", {}).get("max_positions")
-        if max_positions is not None and int(state.get("open_positions", 0)) >= int(max_positions):
-            raise RuntimeError("Limite configurado de posições simultâneas atingido.")
+        max_positions = int(state.get("risk_limits", {}).get("max_positions", 15))
+        if int(state.get("open_positions", 0)) >= max_positions:
+            raise RuntimeError("Limite de segurança: máximo de 15 posições simultâneas.")
         free_margin = state.get("free_margin")
         min_free_margin = float(state.get("risk_limits", {}).get("min_free_margin", 25.0))
         if free_margin is not None and free_margin < min_free_margin:
