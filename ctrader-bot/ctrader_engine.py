@@ -196,6 +196,26 @@ class CTraderDemoBridge:
                 self._state["accounts"] = accounts
                 self._state["account_validated"] = any(not a["is_live"] for a in accounts)
                 self._state["last_error"] = None if accounts else "API autorizada, mas nenhuma conta foi retornada; verifique a permissão de acesso a contas no aplicativo cTrader"
+                selected_id = self._state.get("selected_account_id")
+                selected_demo = next((a for a in accounts if a["account_id"] == selected_id and not a["is_live"]), None)
+                timer_deadline = self._state.get("auto_deadline")
+                resume_auto = bool(self._auto_enabled and selected_demo and timer_deadline)
+                if selected_id is not None and not selected_demo:
+                    self._state["account_authorized"] = False
+                    self._auto_enabled = False
+                    self._state["auto_trading"] = False
+                    self._state["auto_status"] = "Automação parada: conta DEMO não confirmada após reconexão"
+                elif resume_auto:
+                    import time
+                    if time.time() >= timer_deadline:
+                        self._auto_enabled = False
+                        self._state["auto_trading"] = False
+                        self._state["auto_status"] = "Temporizador expirou durante a desconexão; automação não retomada"
+                        resume_auto = False
+            if selected_demo and selected_id is not None:
+                if resume_auto:
+                    log.info("Reconnecting: reauthorizing the previously selected DEMO account")
+                reactor.callFromThread(self._send_account_auth, int(selected_id))
         elif message.payloadType == ProtoOAAccountAuthRes().payloadType:
             with self._lock:
                 self._state["account_authorized"] = True
