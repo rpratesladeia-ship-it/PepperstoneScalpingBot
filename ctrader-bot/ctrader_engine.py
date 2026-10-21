@@ -1,6 +1,7 @@
 """Minimal cTrader Open API session bridge. Demo-only; order submission is intentionally not exposed yet."""
 import threading
 import logging
+import os
 from typing import Any
 
 log = logging.getLogger("trader-ctrader")
@@ -10,6 +11,7 @@ from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import *
 from twisted.internet import reactor
+from ai_filter import load_model, evaluate_ml_gate
 
 
 class CTraderDemoBridge:
@@ -54,6 +56,12 @@ class CTraderDemoBridge:
         # DMS(14) tick-based prototype; not canonical OHLC ADX.
         self._dms_period = 14
         self._dms_min_strength = 20.0
+        self._ai_enabled = os.getenv("AI_FILTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        self._ai_model = load_model()
+        self._state["ai_filter"] = {"enabled": self._ai_enabled, "model_loaded": self._ai_model is not None,
+                                    "status": ("Filtro IA ligado" if self._ai_enabled and self._ai_model else
+                                               "IA ligada sem modelo: entradas serão bloqueadas" if self._ai_enabled else
+                                               "Filtro IA desligado; aguardando modelo treinado")}
         self._state["dms_filter"] = {"enabled": True, "period": 14, "min_strength": 20.0, "method": "tick approximation", "last": {}}
         # Initial DEMO protection distances in absolute price units; review per broker/symbol.
         # Absolute price distances; DEMO-only until each broker symbol is validated.
@@ -489,8 +497,19 @@ class CTraderDemoBridge:
                     + " / força " + str(dms["adx"] if dms else "—") + ")"
                 )
                 return
+            if self._ai_enabled:
+                try:
+                    allowed, probability, reason = evaluate_ml_gate(prices, side, self._ai_model)
+                except (ValueError, TypeError) as exc:
+                    allowed, probability, reason = False, None, "IA não conseguiu avaliar os preços; entrada bloqueada"
+                self._state["ai_filter"]["last"] = {"symbol": symbol, "side": side,
+                    "probability_up": round(probability, 4) if probability is not None else None,
+                    "reason": reason}
+                if not allowed:
+                    self._state["auto_status"] = "Entrada " + side + " bloqueada pela IA em " + symbol + ": " + reason
+                    return
             self._auto_last_trade_at[symbol] = now
-            self._state["auto_status"] = "Sinal " + side + " confirmado pelo filtro DMS 14 em " + symbol + "; enviando ordem demo"
+            self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
         try:
             # One minimal unit; this is demo-only and intentionally throttled.
             self.place_demo_market_order(symbol, side, 1)
