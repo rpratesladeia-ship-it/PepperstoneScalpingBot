@@ -40,19 +40,25 @@ def read_events(limit=5000):
 def analysis_report():
     events = read_events()
     counts = Counter(e.get("type", "unknown") for e in events)
-    signals = [e for e in events if e.get("type") == "signal"]
-    reasons = Counter(e.get("decision", "sem decisão") for e in signals)
-    symbols = Counter(e.get("symbol", "?") for e in signals)
-    sides = Counter(e.get("side", "?") for e in signals)
+    # Count one technical crossover as one signal. Filter outcomes are separate events,
+    # so DMS/AI decisions cannot inflate the number of signals.
+    candidates = [e for e in events if e.get("type") == "signal_candidate"]
+    decisions = [e for e in events if e.get("type") == "filter_decision"]
+    reasons = Counter(e.get("decision", "sem decisão") for e in decisions)
+    symbols = Counter(e.get("symbol", "?") for e in candidates)
+    sides = Counter(e.get("side", "?") for e in candidates)
     orders = [e for e in events if e.get("type") in ("order_queued", "order_response")]
     pnl = [e for e in events if e.get("type") == "position_pnl"]
+    closed = [e for e in events if e.get("type") == "position_closed"]
     return {
         "mode": "análise explicável baseada em regras; não é previsão nem modelo treinado",
         "events_total": len(events), "event_counts": dict(counts),
-        "signals_logged": len(signals), "signal_decisions": dict(reasons),
+        "signals_logged": len(candidates), "filter_decisions": len(decisions),
+        "signal_decisions": dict(reasons),
         "signals_by_symbol": dict(symbols.most_common(20)), "signals_by_side": dict(sides),
-        "order_events": len(orders), "pnl_samples": len(pnl), "latest_events": events[-12:],
-        "note": "Dados disponíveis apenas desde a instrumentação; reinícios da hospedagem podem apagar este arquivo. Baixe backups periodicamente."
+        "order_events": len(orders), "pnl_samples": len(pnl),
+        "closed_trade_outcomes": len(closed), "latest_events": events[-12:],
+        "note": "O PnL em aberto não equivale ao resultado realizado de uma operação encerrada. Dados podem desaparecer após reinício se não houver disco persistente; baixe backups periodicamente."
     }
 
 def export_backup():
