@@ -161,8 +161,18 @@ class CTraderDemoBridge:
         payload = Protobuf.extract(message)
         if message.payloadType == ProtoOAErrorRes().payloadType:
             code = str(getattr(payload, "errorCode", "erro cTrader"))
-            # ALREADY_LOGGED_IN is an error response, not an ApplicationAuthRes.
-            # Do not send account-list requests on the assumption that auth succeeded.
+            # Restore the previous flow: cTrader may report ALREADY_LOGGED_IN
+            # when application auth is already established on this session.
+            # Continue account discovery, then require explicit DEMO account auth.
+            if code.upper() == "ALREADY_LOGGED_IN":
+                with self._lock:
+                    self._state["application_authorized"] = True
+                    self._state["last_error"] = None
+                req = ProtoOAGetAccountListByAccessTokenReq()
+                req.accessToken = self._token
+                client.send(req).addErrback(self._on_error)
+                log.info("cTrader reported ALREADY_LOGGED_IN; continuing account discovery")
+                return
             with self._lock:
                 self._state["last_error"] = "cTrader recusou uma solicitação: " + code
                 self._state["account_authorized"] = False
