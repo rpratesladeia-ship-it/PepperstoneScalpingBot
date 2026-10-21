@@ -1,8 +1,9 @@
-"""Train an experimental logistic-regression gate from a CSV of historical close prices.
+"""Train an experimental logistic-regression gate from chronological close prices.
 
-CSV must have a column named 'close' in chronological order. This script is for
-offline research only. It writes a model only when the chronological holdout is
-large enough and contains both classes. It does not connect to a broker.
+CSV must have a column named 'close' in chronological order. Offline research only:
+this script does not connect to a broker and does not establish profitability.
+A purged chronological holdout prevents labels near the split from sharing future
+returns across train and test.
 """
 import argparse
 import csv
@@ -32,8 +33,12 @@ def read_closes(path):
 
 
 def build_rows(closes, horizon, cost_threshold):
+    if horizon < 1:
+        raise ValueError("O horizonte precisa ser pelo menos 1")
+    if not math.isfinite(cost_threshold) or cost_threshold < 0:
+        raise ValueError("O custo mínimo precisa ser um número finito não negativo")
     rows, labels = [], []
-    for end in range(22, len(closes) - horizon):
+    for end in range(22, len(closes) - horizon + 1):
         history = closes[:end]
         future_return = closes[end + horizon - 1] / closes[end - 1] - 1.0
         rows.append(extract_features(history))
@@ -42,13 +47,18 @@ def build_rows(closes, horizon, cost_threshold):
 
 
 def train(input_csv, output_json, horizon=5, cost_threshold=0.0002, epochs=1600, learning_rate=0.03):
+    if epochs < 1 or not math.isfinite(learning_rate) or learning_rate <= 0:
+        raise ValueError("Épocas e taxa de aprendizado precisam ser positivas")
     closes = read_closes(input_csv)
     rows, labels = build_rows(closes, horizon, cost_threshold)
     split = int(len(rows) * 0.75)
-    x_train, y_train = rows[:split], labels[:split]
+    # Purge training samples whose forward-label window would overlap the test period.
+    train_end = max(0, split - horizon)
+    x_train, y_train = rows[:train_end], labels[:train_end]
     x_test, y_test = rows[split:], labels[split:]
-    if len(x_test) < 30 or len(set(y_train)) < 2 or len(set(y_test)) < 2:
+    if len(x_test) < 30 or len(x_train) < 100 or len(set(y_train)) < 2 or len(set(y_test)) < 2:
         raise ValueError("Dados insuficientes ou holdout cronológico sem as duas classes; não foi salvo modelo")
+
     means = [sum(row[j] for row in x_train) / len(x_train) for j in range(len(FEATURE_NAMES))]
     scales = []
     for j, mean in enumerate(means):
@@ -69,16 +79,29 @@ def train(input_csv, output_json, horizon=5, cost_threshold=0.0002, epochs=1600,
         count = len(normalized)
         weights = [w - rate * (g / count + 0.001 * w) for w, g in zip(weights, grad_w)]
         bias -= rate * grad_b / count
-    model = {"version": 1, "trained": True, "feature_names": FEATURE_NAMES, "mean": means,
-             "scale": scales, "weights": weights, "bias": bias,
-             "training": {"rows": len(rows), "train_rows": len(x_train), "holdout_rows": len(x_test),
-                          "horizon": horizon, "cost_threshold": cost_threshold}}
-    predictions = [sigmoid(bias + sum(w * ((row[j] - means[j]) / scales[j]) for j, w in enumerate(weights))) for row in x_test]
+
+    predictions = [
+        sigmoid(bias + sum(w * ((row[j] - means[j]) / scales[j]) for j, w in enumerate(weights)))
+        for row in x_test
+    ]
     accuracy = sum((p >= 0.5) == bool(y) for p, y in zip(predictions, y_test)) / len(y_test)
-    model["training"]["holdout_accuracy"] = round(accuracy, 4)
-    model["training"]["holdout_positive_rate"] = round(sum(y_test) / len(y_test), 4)
-    # Deliberately do not claim profitability: this is only classification accuracy.
-    Path(output_json).write_text(json.dumps(model, indent=2), encoding="utf-8")
+    positive_rate = sum(y_test) / len(y_test)
+    model = {
+        "version": 1, "trained": True, "feature_names": FEATURE_NAMES,
+        "mean": means, "scale": scales, "weights": weights, "bias": bias,
+        "training": {
+            "rows": len(rows), "train_rows": len(x_train), "purged_rows": split - train_end,
+            "holdout_rows": len(x_test), "horizon": horizon, "cost_threshold": cost_threshold,
+            "holdout_accuracy": round(accuracy, 4),
+            "holdout_positive_rate": round(positive_rate, 4),
+            "validation": "chronological_holdout_purged",
+            "profitability_verified": False,
+        },
+    }
+    # Accuracy is only a classification metric, not a trading-performance measure.
+    output_path = Path(output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
     return model
 
 
@@ -87,7 +110,8 @@ if __name__ == "__main__":
     parser.add_argument("csv", help="CSV histórico com coluna close")
     parser.add_argument("--output", default="ctrader-bot/ai_model.json")
     parser.add_argument("--horizon", type=int, default=5)
-    parser.add_argument("--cost-threshold", type=float, default=0.0002, help="Retorno mínimo futuro, por exemplo 0.0002 = 0,02%%")
+    parser.add_argument("--cost-threshold", type=float, default=0.0002,
+                        help="Retorno mínimo futuro, por exemplo 0.0002 = 0,02%%")
     args = parser.parse_args()
     result = train(args.csv, args.output, args.horizon, args.cost_threshold)
     print(json.dumps(result["training"], indent=2))
