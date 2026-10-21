@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from ai_filter import FEATURE_NAMES, evaluate_ml_gate, extract_features, load_model, predict_up_probability
+from train_ai_filter import build_rows
 
 
 class AIFilterTests(unittest.TestCase):
@@ -41,6 +42,17 @@ class AIFilterTests(unittest.TestCase):
             path = Path(folder) / "model.json"
             path.write_text(json.dumps({"version": 999}), encoding="utf-8")
             self.assertIsNone(load_model(path))
+
+    def test_training_rows_are_chronological_and_horizon_aligned(self):
+        closes = [100.0 + i for i in range(40)]
+        rows, labels = build_rows(closes, horizon=2, cost_threshold=0.0)
+        self.assertEqual(len(rows), len(closes) - 2 - 21)
+        self.assertEqual(len(labels), len(rows))
+        self.assertTrue(all(label == 1 for label in labels))
+
+    def test_training_rejects_invalid_horizon(self):
+        with self.assertRaises(ValueError):
+            build_rows(self.prices, horizon=0, cost_threshold=0.0)
 
 
 if __name__ == "__main__":
