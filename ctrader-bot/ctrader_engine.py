@@ -33,7 +33,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 2, "min_free_margin": 25.0},
+            "risk_limits": {"max_positions": 15, "min_free_margin": 25.0},
         }
         self._thread = None
         self._auto_enabled = False
@@ -41,7 +41,7 @@ class CTraderDemoBridge:
         self._auto_history = {}
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
-        self._auto_max_positions = 1
+        self._auto_max_positions = 15
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
