@@ -558,20 +558,21 @@ class CTraderDemoBridge:
                     raise RuntimeError("Conecte e autorize uma conta DEMO antes de ativar.")
                 if not account or account["is_live"]:
                     raise PermissionError("Automação bloqueada: somente conta DEMO.")
-                # Without a trained model, allow timed observation only.
-                # The signal loop's AI gate below fails closed before any order is sent.
+                if not self._state.get("strategy_policy", {}).get("loaded"):
+                    raise RuntimeError("Automação bloqueada: política operacional da IA não foi carregada/validada.")
                 if not self._state["symbols"]:
                     raise RuntimeError("Nenhum ativo disponível para a automação.")
                 self._auto_enabled = True
-                observe_only = bool(self._ai_enabled and self._ai_model is None)
+                experimental_demo = bool(self._ai_enabled and self._ai_model is None)
                 started = time.time()
                 deadline = started + duration_minutes * 60
-                self._state.update(auto_trading=True, auto_observe_only=observe_only,
+                self._state.update(auto_trading=True, auto_observe_only=False,
+                                   auto_experimental=experimental_demo,
                                    auto_started_at=started,
                                    auto_duration_seconds=duration_minutes * 60,
                                    auto_deadline=deadline,
-                                   auto_status=("Monitoramento DEMO ativo — sem envio de ordens (modelo IA não instalado)"
-                                                if observe_only else "Ativo: temporizador iniciado"))
+                                   auto_status=("Automação DEMO experimental ativa — sinais técnicos+DMS; modelo ML não instalado"
+                                                if experimental_demo else "Ativo: temporizador iniciado"))
             else:
                 self._auto_enabled = False
                 self._state.update(auto_trading=False, auto_started_at=None,
