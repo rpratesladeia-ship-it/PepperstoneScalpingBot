@@ -42,7 +42,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 2, "min_free_margin": 25.0},
+            "risk_limits": {"max_positions": 1000, "min_free_margin": 25.0},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -59,9 +59,9 @@ class CTraderDemoBridge:
         self._auto_same_symbol_entries = 0
         self._auto_rotation_wait = {}
         self._auto_rotation_other_entries = {}
-        self._auto_max_consecutive_per_symbol = 3
+        self._auto_max_consecutive_per_symbol = 1
         self._auto_other_entries_before_reuse = 5
-        self._auto_max_positions = 2
+        self._auto_max_positions = 1000
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -374,7 +374,11 @@ class CTraderDemoBridge:
                 position_id = int(getattr(position, "positionId", 0) or getattr(trade_data, "positionId", 0))
                 volume = int(getattr(trade_data, "volume", 0)) if trade_data else 0
                 if position_id and volume > 0:
-                    positions[position_id] = {"volume": volume}
+                    trade_symbol_id = int(getattr(trade_data, "symbolId", 0) or 0) if trade_data else 0
+                    symbol_name = next((name for name, sid in self._state.get("symbol_ids", {}).items()
+                                        if sid == trade_symbol_id), None)
+                    positions[position_id] = {"volume": volume, "symbol_id": trade_symbol_id,
+                                               "symbol": symbol_name}
             with self._lock:
                 self._tracked_positions = positions
                 self._state["open_positions"] = len(positions)
@@ -597,8 +601,12 @@ class CTraderDemoBridge:
         import time
         now = time.time()
         with self._lock:
-            if not self._state["account_authorized"] or self._state["open_positions"] >= self._state["risk_limits"]["max_positions"]:
-                self._state["auto_status"] = "Entrada bloqueada: limite de posições atingido ou conta não autorizada"
+            if not self._state["account_authorized"]:
+                self._state["auto_status"] = "Entrada bloqueada: conta DEMO não autorizada"
+                return
+            # One open position per symbol; other assets may operate concurrently.
+            if any(position.get("symbol") == symbol for position in self._tracked_positions.values()):
+                self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
             free_margin = self._state.get("free_margin")
             if free_margin is not None and free_margin < self._state["risk_limits"]["min_free_margin"]:
@@ -756,8 +764,9 @@ class CTraderDemoBridge:
             raise ValueError("Ativo não encontrado na conta")
         if not state["prices"].get(symbol):
             raise RuntimeError("Aguardando cotação do ativo")
-        if int(state.get("open_positions", 0)) >= int(state.get("risk_limits", {}).get("max_positions", 2)):
-            raise RuntimeError("Limite de segurança: máximo de 2 posições simultâneas.")
+        # Do not impose a global position cap; enforce one open position per symbol.
+        if any(position.get("symbol") == symbol for position in self._tracked_positions.values()):
+            raise RuntimeError("Já existe uma posição aberta neste ativo; uma posição por ativo é permitida.")
         free_margin = state.get("free_margin")
         min_free_margin = float(state.get("risk_limits", {}).get("min_free_margin", 25.0))
         if free_margin is not None and free_margin < min_free_margin:
