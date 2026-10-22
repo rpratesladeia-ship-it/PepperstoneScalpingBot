@@ -635,32 +635,18 @@ class CTraderDemoBridge:
                 )
                 return
             if self._ai_enabled:
-                try:
-                    if self._ai_model is not None:
+                # Fail closed: do not label a heuristic score as trained AI.
+                # Automatic entries stay blocked until a valid, trained model is installed.
+                if self._ai_model is None:
+                    allowed, probability, reason = False, None, (
+                        "Entrada bloqueada: modelo de IA treinado não instalado. "
+                        "A análise técnica pode gerar sinais, mas não autoriza ordens automáticas."
+                    )
+                else:
+                    try:
                         allowed, probability, reason = evaluate_ml_gate(prices, side, self._ai_model)
-                    else:
-                        # Transparent fallback: experimental technical score, NOT a trained or calibrated ML model.
-                        values = [float(x) for x in prices]
-                        r3 = values[-1] / values[-4] - 1.0
-                        r8 = values[-1] / values[-9] - 1.0
-                        r14 = values[-1] / values[-15] - 1.0
-                        def _ema(vals, period):
-                            alpha = 2.0 / (period + 1.0)
-                            value = vals[0]
-                            for item in vals[1:]:
-                                value = alpha * item + (1.0 - alpha) * value
-                            return value
-                        gap = (_ema(values[-21:], 9) - _ema(values[-21:], 21)) / values[-1]
-                        rets = [values[i] / values[i-1] - 1.0 for i in range(len(values)-14, len(values)) if values[i-1] > 0]
-                        movement = sum(abs(x) for x in rets)
-                        efficiency = sum(rets) / movement if movement else 0.0
-                        score = max(-4.0, min(4.0, 900.0*r3 + 450.0*r8 + 250.0*r14 + 1800.0*gap + 1.4*efficiency))
-                        probability = 1.0 / (1.0 + __import__("math").exp(-score))
-                        allowed = probability >= 0.55 if side == "BUY" else probability <= 0.45
-                        reason = ("filtro técnico experimental alinhado ao sinal" if allowed else
-                                  "filtro técnico experimental não confirmou o sinal")
-                except (ValueError, TypeError, ZeroDivisionError, OverflowError):
-                    allowed, probability, reason = False, None, "IA não conseguiu avaliar os preços; entrada bloqueada"
+                    except (ValueError, TypeError, ZeroDivisionError, OverflowError):
+                        allowed, probability, reason = False, None, "IA não conseguiu avaliar os preços; entrada bloqueada"
                 self._state["ai_filter"]["last"] = {"symbol": symbol, "side": side,
                     "probability_up": round(probability, 4) if probability is not None else None,
                     "reason": reason, "mode": "ml" if self._ai_model is not None else "experimental"}
