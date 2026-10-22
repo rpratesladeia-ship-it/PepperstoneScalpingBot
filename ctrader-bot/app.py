@@ -1,4 +1,4 @@
-import os, secrets, logging
+import os, secrets, logging, socket, time
 from urllib.parse import urlencode
 import httpx
 from fastapi import FastAPI, Request
@@ -128,6 +128,33 @@ async def api_market_ai(request: Request):
                         "reason": "momentum, médias curtas e eficiência direcional", "samples": len(prices)})
     return {"mode": "pontuação técnica experimental; sem modelo treinado e sem análise de notícias", "results": results,
             "message": "Aguardando pelo menos 22 ticks por ativo configurado." if not results else None}
+
+
+@app.get("/diagnostico-ctrader")
+async def diagnostico_ctrader():
+    """Safe network probe: tests DNS/TCP reachability without using OAuth credentials."""
+    from ctrader_open_api import EndPoints
+    host = str(EndPoints.PROTOBUF_DEMO_HOST)
+    port = int(EndPoints.PROTOBUF_PORT)
+    result = {"host": host, "port": port, "dns_ok": False, "tcp_ok": False}
+    try:
+        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        result["dns_ok"] = bool(addresses)
+        result["resolved_addresses"] = sorted({row[4][0] for row in addresses})
+    except Exception as exc:
+        result["error_stage"] = "dns"
+        result["error_type"] = type(exc).__name__
+        return result
+    started = time.monotonic()
+    try:
+        with socket.create_connection((host, port), timeout=5):
+            result["tcp_ok"] = True
+            result["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
+    except Exception as exc:
+        result["error_stage"] = "tcp"
+        result["error_type"] = type(exc).__name__
+        result["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
+    return result
 
 
 @app.get("/health")
