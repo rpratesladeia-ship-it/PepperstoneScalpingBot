@@ -72,20 +72,22 @@ class CTraderDemoBridge:
         self._state["dms_filter"] = {"enabled": True, "period": 14, "min_strength": 20.0, "method": "tick approximation", "last": {}}
         # Initial DEMO protection distances in absolute price units; review per broker/symbol.
         # Absolute price distances; DEMO-only until each broker symbol is validated.
+        # DEMO experiment: stop-loss distance is 40% of the configured take-profit
+        # distance. Monetary P&L still depends on each broker symbol's contract specs.
         self._protection_distances = {
-            "XAUUSD": (2.0, 3.0), "XAGUSD": (0.10, 0.15),
-            "EURUSD": (0.0010, 0.0015), "GBPUSD": (0.0010, 0.0015),
-            "USDJPY": (0.10, 0.15), "USDCHF": (0.0010, 0.0015),
-            "USDCAD": (0.0010, 0.0015), "AUDUSD": (0.0010, 0.0015),
-            "NZDUSD": (0.0010, 0.0015), "EURGBP": (0.0010, 0.0015),
-            "EURJPY": (0.10, 0.15), "GBPJPY": (0.10, 0.15),
-            "AUDJPY": (0.10, 0.15), "EURAUD": (0.0015, 0.0020),
-            "US30": (10.0, 15.0), "NAS100": (15.0, 25.0),
-            "SPX500": (5.0, 8.0), "GER40": (15.0, 25.0),
-            "UK100": (10.0, 15.0), "JPN225": (50.0, 80.0),
-            "BTCUSD": (100.0, 150.0), "ETHUSD": (10.0, 15.0),
-            "LTCUSD": (5.0, 8.0), "BCHUSD": (10.0, 15.0),
-            "ADAUSD": (0.02, 0.03),
+            "XAUUSD": (1.2, 3.0), "XAGUSD": (0.06, 0.15),
+            "EURUSD": (0.0006, 0.0015), "GBPUSD": (0.0006, 0.0015),
+            "USDJPY": (0.06, 0.15), "USDCHF": (0.0006, 0.0015),
+            "USDCAD": (0.0006, 0.0015), "AUDUSD": (0.0006, 0.0015),
+            "NZDUSD": (0.0006, 0.0015), "EURGBP": (0.0006, 0.0015),
+            "EURJPY": (0.06, 0.15), "GBPJPY": (0.06, 0.15),
+            "AUDJPY": (0.06, 0.15), "EURAUD": (0.0008, 0.0020),
+            "US30": (6.0, 15.0), "NAS100": (10.0, 25.0),
+            "SPX500": (3.2, 8.0), "GER40": (10.0, 25.0),
+            "UK100": (6.0, 15.0), "JPN225": (32.0, 80.0),
+            "BTCUSD": (60.0, 150.0), "ETHUSD": (6.0, 15.0),
+            "LTCUSD": (3.2, 8.0), "BCHUSD": (6.0, 15.0),
+            "ADAUSD": (0.012, 0.03),
         }
         self._state["configured_auto_symbols"] = sorted(self._protection_distances)
         self._state["symbol_digits"] = {}
