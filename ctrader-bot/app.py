@@ -60,7 +60,7 @@ async function refresh(){
     $('autoTimer').textContent='Trabalhando há '+fmt(elapsed)+' | Desliga em '+fmt(left);
   }else{$('autoTimer').textContent='Temporizador parado';}
   $('autoTimes').innerHTML='Início da sessão atual/última: '+clock(b.last_auto_started_at||b.auto_started_at)+'<br>Parada: '+clock(b.last_auto_stopped_at)+'<br>Motivo: '+(b.last_auto_stop_reason||(b.auto_trading?'Robô automático em execução':'Aguardando início'));
-  $('manualTimes').textContent='Última ordem manual solicitada: '+clock(b.last_manual_order_at);
+  $('manualTimes').textContent='Última ordem solicitada (manual/automática): '+clock(b.last_manual_order_at);
   const sel=$('account');
   const accountList=(b.accounts||[]).map(a=>({id:String(a.account_id),live:!!a.is_live}));
   const signature=JSON.stringify(accountList);
