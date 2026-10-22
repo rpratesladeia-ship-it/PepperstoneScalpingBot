@@ -47,18 +47,17 @@ async function refresh(){
   $('status').textContent=!d.oauth_authorized?'Não conectado. Toque em Conectar conta cTrader.':!b.connected?'Autorização recebida; conectando à API cTrader…':!b.application_authorized?'Conectado; aguardando autorização do aplicativo…':!b.accounts?.length?'Aplicativo autorizado; aguardando lista de contas…':!b.account_authorized?'Contas carregadas. Selecione uma conta marcada DEMO e valide.': 'Conta DEMO autorizada. Verifique as cotações antes de testar.';
   $('accountInfo').textContent='Conexão: '+(b.connected?'online':'aguardando')+' | App autorizado: '+(b.application_authorized?'sim':'não')+' | Conta autorizada: '+(b.account_authorized?'sim':'não')+(b.last_error?' | Aviso: '+b.last_error:'');
   $('symbols').textContent=(b.symbols||[]).join(', ')||'Nenhum ativo ainda';
-  $('execution').textContent=b.auto_trading?(b.auto_observe_only?'MONITORAMENTO DEMO ATIVO — SEM ORDENS':'AUTOMÁTICA DEMO ATIVA'):(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
+  $('execution').textContent=b.auto_trading?(b.auto_observe_only?'MONITORAMENTO DEMO ATIVO — SEM ORDENS':(b.ai_filter?.enabled&&!b.ai_filter?.model_loaded?'AUTOMÁTICA DEMO EXPERIMENTAL ATIVA':'AUTOMÁTICA DEMO ATIVA')):(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');
   const ai=b.ai_filter||{};
   $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'BLOQUEIO DE SEGURANÇA — modelo ML treinado ainda não instalado; entradas automáticas não podem iniciar'):'desligado');
   const autoButton=$('autoToggle');
-  const observeOnly=!!(ai.enabled && !ai.model_loaded);
-  const autoBlocked=false;
+  const experimentalDemo=!!(ai.enabled && !ai.model_loaded);
   autoButton.disabled=false;
   autoButton.style.opacity='1';
   autoButton.style.cursor='pointer';
-  autoButton.textContent=b.auto_trading?'DESATIVAR MONITORAMENTO DEMO':(observeOnly?'INICIAR MONITORAMENTO DEMO (SEM ORDENS)':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO');
-  if(observeOnly && !b.auto_trading) $('autoStatus').textContent='Modo de observação disponível: registra sinais, mas não envia ordens porque ainda não há modelo de IA treinado.';
+  autoButton.textContent=b.auto_trading?'DESATIVAR ROBÔ AUTOMÁTICO DEMO':(experimentalDemo?'ATIVAR ENTRADAS AUTOMÁTICAS DEMO (EXPERIMENTAL)':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO');
+  if(experimentalDemo && !b.auto_trading) $('autoStatus').textContent='Modo experimental DEMO: pode enviar ordens com sinal técnico + DMS, limite de 2 posições e SL/TP configurados. Modelo de IA treinado ainda não instalado; resultados não validados.';
   try{const mr=await fetch('/api/market-ai',{cache:'no-store'});const md=await mr.json();$('marketAi').innerHTML=(md.results||[]).map(x=>'<div class="tile" style="margin:8px 0"><b>'+x.symbol+'</b> — Alta <b>'+x.up_pct+'%</b> / Baixa <b>'+x.down_pct+'%</b><br>'+x.signal+' · '+x.reason+'</div>').join('')||md.message||'Aguardando histórico…';}catch(_){$('marketAi').textContent='Análise indisponível no momento.'}
   const clock=ts=>ts?new Date(ts*1000).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',hour12:false,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
   if(b.auto_trading && b.auto_deadline){
