@@ -169,6 +169,11 @@ async def oauth_callback(request: Request, code: str = "", state: str = "", erro
         sid = request.session.get("sid") or secrets.token_urlsafe(32)
         request.session["sid"] = sid
         TOKENS[sid] = {"access_token":access_token,"refresh_token":data.get("refreshToken"),"expires_in":data.get("expiresIn")}
+        # OAuth callback can be repeated from mobile/browser history; close the old
+        # cTrader TCP session before replacing its bridge to avoid duplicate app auth.
+        previous_bridge = BRIDGES.get(sid)
+        if previous_bridge is not None:
+            previous_bridge.close_connection()
         bridge = CTraderDemoBridge(CLIENT_ID, CLIENT_SECRET)
         BRIDGES[sid] = bridge
         bridge.connect(access_token)
