@@ -514,12 +514,12 @@ class CTraderDemoBridge:
                 client.send(req).addCallbacks(record_close_response, close_failed)
                 log.info("Financial trailing requested DEMO close position=%s peak=%.4f current=%.4f", position_id, peak, current_profit)
 
-    def set_auto_trading(self, enabled: bool, duration_minutes: int = 60):
+    def set_auto_trading(self, enabled: bool, duration_minutes: int = 10080):
         """Enable guarded DEMO entries with an automatic stop timer."""
         import time
         duration_minutes = int(duration_minutes)
-        if enabled and not 1 <= duration_minutes <= 1440:
-            raise ValueError("O temporizador deve ficar entre 1 e 1440 minutos.")
+        if enabled and not 1 <= duration_minutes <= 10080:
+            raise ValueError("O temporizador deve ficar entre 1 e 10080 minutos (até 7 dias).")
         with self._lock:
             if enabled:
                 account = next((a for a in self._state["accounts"]
