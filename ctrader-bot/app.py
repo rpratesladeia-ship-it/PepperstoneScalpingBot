@@ -54,11 +54,21 @@ async function refresh(){
   const ai=b.ai_filter||{};
   $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'BLOQUEIO DE SEGURANÇA — modelo ML treinado ainda não instalado; entradas automáticas não podem iniciar'):'desligado');
   const autoButton=$('autoToggle');
+  const mainButton=$('connectBtn');
   const experimentalDemo=!!(ai.enabled && !ai.model_loaded);
   autoButton.disabled=false;
   autoButton.style.opacity='1';
   autoButton.style.cursor='pointer';
-  autoButton.textContent=b.auto_trading?'PARAR ROBÔ DEMO':'INICIAR ROBÔ DEMO — CONTA SELECIONADA';
+  autoButton.textContent=b.auto_trading?'PARAR ROBÔ DEMO':'INICIAR ROBÔ DEMO';
+  if(mainButton && !mainButton.disabled){
+    if(b.auto_trading){
+      mainButton.textContent='PARAR ROBÔ DEMO';
+      mainButton.onclick=stopDemoFromSingleButton;
+    } else {
+      mainButton.textContent='INICIAR ROBÔ DEMO';
+      mainButton.onclick=startDemoFromSingleButton;
+    }
+  }
   if(experimentalDemo && !b.auto_trading) $('autoStatus').textContent='Modelo ML treinado ausente. O início permanece sujeito à política DEMO, limites de risco e validação do ciclo de ordens.';
   try{const mr=await fetch('/api/market-ai',{cache:'no-store'});const md=await mr.json();$('marketAi').innerHTML=(md.results||[]).map(x=>'<div class="tile" style="margin:8px 0"><b>'+x.symbol+'</b> — Alta <b>'+x.up_pct+'%</b> / Baixa <b>'+x.down_pct+'%</b><br>'+x.signal+' · '+x.reason+'</div>').join('')||md.message||'Aguardando histórico…';}catch(_){$('marketAi').textContent='Análise indisponível no momento.'}
   const clock=ts=>ts?new Date(ts*1000).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',hour12:false,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
@@ -121,7 +131,22 @@ async function stopDemoFromSingleButton(){
 }
 $('connectBtn').onclick=startDemoFromSingleButton;
 const autoResume=localStorage.getItem('meuTraderAutoStart')==='1';
-if(autoResume){localStorage.removeItem('meuTraderAutoStart');const savedMinutes=localStorage.getItem('meuTraderRunMinutes')||'10080';$('runMinutes').value=savedMinutes;setTimeout(startDemoFromSingleButton,1200);}
+if(autoResume){
+ const savedMinutes=localStorage.getItem('meuTraderRunMinutes')||'10080';$('runMinutes').value=savedMinutes;
+ let resumeTries=0;
+ const resumeTimer=setInterval(async()=>{
+  resumeTries++;
+  try{
+   const sr=await fetch('/api/status',{cache:'no-store'});const st=await sr.json();const b=st.broker||{};
+   if(st.oauth_authorized && b.connected && b.application_authorized){
+    clearInterval(resumeTimer);localStorage.removeItem('meuTraderAutoStart');startDemoFromSingleButton();
+   }else if(resumeTries>=20){
+    clearInterval(resumeTimer);localStorage.removeItem('meuTraderAutoStart');
+    $('result').textContent='Conexão/autorização ainda não confirmada. Toque em INICIAR ROBÔ DEMO para tentar novamente.';
+   }
+  }catch(_){if(resumeTries>=20){clearInterval(resumeTimer);localStorage.removeItem('meuTraderAutoStart');}}
+ },1000);
+}
 $('autoToggle').onclick=async()=>{
  const active=($('autoToggle').textContent||'').startsWith('PARAR ROBÔ');
  if(active){const r=await fetch('/api/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:false,duration_minutes:60})});$('result').textContent=await r.text();setTimeout(refresh,500);return;}
