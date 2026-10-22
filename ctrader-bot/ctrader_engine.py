@@ -15,6 +15,7 @@ from ctrader_open_api.messages.OpenApiMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import *
 from twisted.internet import reactor
 from ai_filter import load_model, evaluate_ml_gate
+from strategy_policy import load_strategy_spec, analyze_pair
 
 
 class CTraderDemoBridge:
@@ -48,32 +49,36 @@ class CTraderDemoBridge:
             "last_auto_stop_reason": None,
             "last_manual_order_at": None, "last_manual_order_result_at": None,
         }
-        # Load the versioned AI decision policy stored with the application.
+        # Load both the human-readable mind map and machine-readable policy.
         self._policy_path = Path(__file__).with_name("AI_TRADING_POLICY.md")
+        self._policy_text = ""
+        self._strategy_spec = {}
         try:
             self._policy_text = self._policy_path.read_text(encoding="utf-8")
+            self._strategy_spec = load_strategy_spec()
             self._state["strategy_policy"] = {
                 "loaded": True,
                 "path": self._policy_path.name,
+                "machine_policy_path": "strategy_spec.json",
                 "mode": "DEMO",
                 "statistical_arbitrage": "research_only_disabled",
-                "summary": "Policy file loaded; critical risk rules are also enforced by code."
+                "summary": "Mind map and machine-readable policy loaded."
             }
-        except OSError as exc:
-            self._policy_text = ""
+        except (OSError, ValueError, KeyError) as exc:
             self._state["strategy_policy"] = {
                 "loaded": False,
                 "path": self._policy_path.name,
+                "machine_policy_path": "strategy_spec.json",
                 "mode": "DEMO",
-                "summary": "Policy file unavailable; check deployment artifact."
+                "summary": "Policy could not be validated; automatic entries must be reviewed."
             }
-            log.error("AI trading policy file could not be loaded: %s", type(exc).__name__)
+            log.error("AI strategy policy load/validation failed: %s", type(exc).__name__)
 
         self._thread = None
         self._auto_enabled = False
         self._auto_last_signal = {}
         self._auto_history = {}
-        self._auto_cooldown_seconds = 300
+        self._auto_cooldown_seconds = int(self._strategy_spec.get('risk', {}).get('cooldown_seconds_per_symbol', 300))
         self._auto_last_trade_at = {}
         # Rotation guard: max 3 consecutive successful entries per symbol, then 5 other-symbol entries before reuse.
         self._auto_last_entry_symbol = None
@@ -81,7 +86,7 @@ class CTraderDemoBridge:
         self._auto_rotation_wait = {}
         self._auto_rotation_other_entries = {}
         self._auto_max_consecutive_per_symbol = 1
-        self._auto_other_entries_before_reuse = 5
+        self._auto_other_entries_before_reuse = int(self._strategy_spec.get('risk', {}).get('other_successful_entries_before_symbol_reuse', 5))
         self._auto_max_positions = 1000
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
