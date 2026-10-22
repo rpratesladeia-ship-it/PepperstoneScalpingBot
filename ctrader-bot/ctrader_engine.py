@@ -294,8 +294,16 @@ class CTraderDemoBridge:
                 log.info("cTrader reported ALREADY_LOGGED_IN; continuing account discovery")
                 return
             with self._lock:
-                self._state["last_error"] = "cTrader recusou uma solicitação: " + code
                 self._state["account_authorized"] = False
+                if code.upper() == "UNSUPPORTED_MESSAGE" and "account is not authorized" in description.lower():
+                    self._state["account_validated"] = False
+                    self._state["last_error"] = (
+                        "A cTrader recusou a autorização da conta. Toque em 'Conectar conta cTrader' "
+                        "e aprove novamente o acesso; contas adicionadas depois da autorização inicial "
+                        "podem exigir nova aprovação. Depois selecione novamente uma conta DEMO."
+                    )
+                else:
+                    self._state["last_error"] = "cTrader recusou uma solicitação: " + code + ((" — " + description) if description else "")
             log.warning("cTrader API request rejected: code=%s description=%s", code[:100], description)
             return
         if message.payloadType == ProtoOAApplicationAuthRes().payloadType:
