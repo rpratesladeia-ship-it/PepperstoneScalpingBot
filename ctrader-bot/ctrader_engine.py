@@ -140,7 +140,7 @@ class CTraderDemoBridge:
         try:
             with self._event_log_lock:
                 with self._event_log_path.open("a", encoding="utf-8") as stream:
-                    stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str) + "\\n")
+                    stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str) + "\n")
         except OSError:
             log.exception("Could not persist trading audit event")
 
@@ -404,6 +404,7 @@ class CTraderDemoBridge:
         for item in getattr(payload, "positionUnrealizedPnL", []):
             position_id = int(getattr(item, "positionId", 0))
             current_profit = float(getattr(item, "netUnrealizedPnL", 0)) / divisor
+            self._record_event("position_pnl", position_id=position_id, net_unrealized_pnl=current_profit)
             with self._lock:
                 if position_id not in self._tracked_positions or position_id in self._trail_closing_positions:
                     continue
@@ -730,6 +731,9 @@ class CTraderDemoBridge:
             req.takeProfit = round(entry_price - tp_distance, digits)
         with self._lock:
             self._state["last_order"] = {"accepted": False, "status": "enviando ordem DEMO com SL/TP", "symbol": symbol, "side": side, "volume_units": volume_units, "stop_loss": req.stopLoss, "take_profit": req.takeProfit}
+        self._record_event("order_request", symbol=symbol, side=side, volume_units=volume_units,
+            entry_price=entry_price, stop_loss=req.stopLoss, take_profit=req.takeProfit,
+            order_source="automatic" if self._auto_enabled else "manual")
         def send():
             client.send(req).addCallbacks(
                 lambda msg: self._record_order_response(msg, symbol, side, volume_units),
@@ -748,4 +752,7 @@ class CTraderDemoBridge:
                 "order_id": int(order.orderId) if order else None,
                 "status": "resposta recebida",
             }
+        self._record_event("order_response", symbol=symbol, side=side, volume_units=volume_units,
+            accepted=message.payloadType == ProtoOAExecutionEvent().payloadType,
+            order_id=int(order.orderId) if order else None)
         return message
