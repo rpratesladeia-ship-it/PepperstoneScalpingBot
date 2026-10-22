@@ -264,11 +264,12 @@ class CTraderDemoBridge:
         # the TCP socket is reachable; keep the wording precise for diagnosis.
         log.warning("cTrader request/deferred failure: type=%s detail=%s", error_type, error_text)
         with self._lock:
-            # A timeout on an individual request (for example a market-data or
-            # reconciliation request) does not revoke OAuth/application/account
-            # authorization. Clearing these flags here caused the UI to show
-            # "App autorizado: não" even after AuthRes had arrived successfully.
-            self._state["last_error"] = "Uma solicitação cTrader expirou (" + error_type + "); a autorização será mantida se já foi confirmada."
+            # A request timeout is diagnostic, not proof that authorization failed.
+            # Keep it separate so the UI does not show a stale timeout as the main status.
+            if error_type == "TimeoutError":
+                self._state["last_request_warning"] = "Uma solicitação cTrader expirou; verifique os logs do servidor."
+            else:
+                self._state["last_error"] = "Falha numa solicitação cTrader (" + error_type + "); autorização preservada."
         return None
 
     def _on_message(self, client, message):
