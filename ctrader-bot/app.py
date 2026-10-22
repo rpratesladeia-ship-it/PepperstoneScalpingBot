@@ -366,7 +366,24 @@ _MARKET_FEEDS = [
 
 
 @app.get("/api/strategy-policy")
-async def strategy_policy_status():
+async def strategy_policy_status(request: Request):
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if bridge is None:
+        return {
+            "loaded": False,
+            "path": "ctrader-bot/strategy_spec.json",
+            "mode": "DEMO",
+            "statistical_arbitrage": "research_only_disabled",
+            "summary": "Conecte e autorize uma conta DEMO para consultar a política ativa.",
+            "critical_rules": {
+                "one_open_position_per_symbol": True,
+                "other_successful_entries_before_symbol_reuse": 5,
+                "real_account_allowed": False,
+                "statistical_arbitrage_enabled": False,
+                "zscore_alone_authorizes_order": False
+            }
+        }
     state = bridge.snapshot()
     policy = state.get("strategy_policy", {})
     return {
