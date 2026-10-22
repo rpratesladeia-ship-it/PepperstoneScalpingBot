@@ -2,6 +2,9 @@
 import threading
 import logging
 import os
+import json
+import time
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("trader-ctrader")
@@ -21,6 +24,10 @@ class CTraderDemoBridge:
         self.client_id = client_id
         self.client_secret = client_secret
         self._lock = threading.RLock()
+        # Audit trail for later strategy/AI analysis. Render's local filesystem may be ephemeral.
+        self._event_log_path = Path(os.getenv("TRADING_EVENT_LOG", "/tmp/meu-trader-events.jsonl"))
+        self._event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._event_log_lock = threading.Lock()
         self._client = None
         self._token = None
         self._state: dict[str, Any] = {
@@ -126,6 +133,16 @@ class CTraderDemoBridge:
         }
         self._state["configured_auto_symbols"] = sorted(self._protection_distances)
         self._state["symbol_digits"] = {}
+
+    def _record_event(self, event_type: str, **fields):
+        """Append one structured market/trading event for later analysis."""
+        record = {"ts": time.time(), "type": event_type, **fields}
+        try:
+            with self._event_log_lock:
+                with self._event_log_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str) + "\\n")
+        except OSError:
+            log.exception("Could not persist trading audit event")
 
     def snapshot(self):
         with self._lock:
@@ -342,6 +359,11 @@ class CTraderDemoBridge:
                         history = self._auto_history.setdefault(name, [])
                         history.append(current)
                         del history[:-30]
+                        self._record_event("quote", symbol=name,
+                            bid_raw=int(getattr(payload, "bid", 0) or 0),
+                            ask_raw=int(getattr(payload, "ask", 0) or 0),
+                            price_raw=current, digits=self._state["symbol_digits"].get(name, 5),
+                            auto_enabled=self._auto_enabled)
                         self._evaluate_auto_entry(name, history)
         elif message.payloadType == ProtoOAExecutionEvent().payloadType:
             with self._lock:
@@ -542,6 +564,8 @@ class CTraderDemoBridge:
                 self._state["dms_filter"]["last"][symbol] = dms
             if not side:
                 return
+            self._record_event("signal", symbol=symbol, side=side,
+                price_raw=prices[-1], dms=dms, ai_enabled=self._ai_enabled)
             if not dms or dms["direction"] != side or dms["adx"] < self._dms_min_strength:
                 self._state["auto_status"] = (
                     "Entrada " + side + " bloqueada pelo DMS 14 em " + symbol
@@ -580,6 +604,10 @@ class CTraderDemoBridge:
                 self._state["ai_filter"]["last"] = {"symbol": symbol, "side": side,
                     "probability_up": round(probability, 4) if probability is not None else None,
                     "reason": reason, "mode": "ml" if self._ai_model is not None else "experimental"}
+                self._record_event("ai_decision", symbol=symbol, side=side,
+                    probability_up=round(probability, 6) if probability is not None else None,
+                    allowed=bool(allowed), reason=reason,
+                    mode="ml" if self._ai_model is not None else "experimental")
                 if not allowed:
                     self._state["auto_status"] = "Entrada " + side + " bloqueada pelo filtro IA experimental em " + symbol + ": " + reason
                     return
@@ -587,7 +615,9 @@ class CTraderDemoBridge:
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
         try:
             # One minimal unit; this is demo-only and intentionally throttled.
-            self.place_demo_market_order(symbol, side, 1)
+            order_result = self.place_demo_market_order(symbol, side, 1)
+            self._record_event("entry_requested", symbol=symbol, side=side,
+                volume_units=1, result=order_result)
             with self._lock:
                 # Update rotation only after the order call succeeds.
                 if self._auto_last_entry_symbol == symbol:
@@ -608,6 +638,7 @@ class CTraderDemoBridge:
                     self._auto_rotation_other_entries[symbol] = 0
                 self._state["auto_status"] = "Ordem DEMO enviada: " + side + " " + symbol + " | rotação de ativos aplicada"
         except Exception as exc:
+            self._record_event("entry_error", symbol=symbol, side=side, error=str(exc)[:300])
             with self._lock:
                 self._state["auto_status"] = "Entrada bloqueada: " + str(exc)[:140]
             log.warning("Automatic demo entry blocked for %s: %s", symbol, type(exc).__name__)
