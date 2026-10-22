@@ -55,7 +55,8 @@ Official docs:
 - Dashboard endpoint: `/api/market-context`. It reads public RSS feeds from the Federal Reserve, Bureau of Labor Statistics (BLS), and Bureau of Economic Analysis (BEA), caches the result for 15 minutes, and reports unavailable feeds instead of treating them as empty market news.
 - Official calendars linked in the panel: Federal Reserve/FOMC, BLS releases, and BEA releases. Check the published time zone and convert to Brasília time yourself before building a session plan.
 - Headlines are contextual information only. The current code does not automatically parse calendar events into a high-impact news blackout; this must be added and tested before relying on it to block trades.
-- Automatic trading now refuses to start if `AI_FILTER_ENABLED=true` and no valid trained model is loaded. The concurrent-position ceiling was reduced from 15 to 2.
+- The current experimental DEMO mode can send technical+DMS orders without a trained ML model; it must not be described as trained AI. Statistical arbitrage, PPO and NLP remain research-only until separately implemented and validated.
+- The global two-position cap was removed. The current intended rule is one open position per symbol, plus five successful entries on other symbols before reusing a symbol; validate this behavior against reconciled broker positions before relying on it.
 - Do not treat the experimental ML trainer as proof of edge. Evaluate spread, commission, slippage, out-of-sample/walk-forward performance, and each instrument's contract specifications before considering any release from the safety block.
 
 
@@ -65,3 +66,10 @@ O mapa mental deve ser mantido como especificação versionada no projeto e refl
 A arbitragem estatística é uma linha de pesquisa separada, desativada até existirem pares configurados e validados, dados sincronizados suficientes, análise de estabilidade/cointegração, custos de spread/comissão/slippage/financiamento e validação walk-forward fora da amostra. Z-Score de ±2 é apenas um candidato a sinal, nunca autorização isolada para ordem. Order book, iceberg, volatilidade implícita, PPO e NLP só podem ser usados quando houver dados/infraestrutura comprovados; Kelly permanece desativada.
 
 O plano de risco conserva uma posição aberta por ativo e exige cinco entradas bem-sucedidas em outros ativos antes de reutilizar um ativo, com cooldown por símbolo. Não há limite global fixo de posições, mas todas as entradas continuam sujeitas à margem, SL/TP, limites de perda e qualidade dos dados. Antes de ampliar a automação, implementar e testar reconciliação de PnL realizado e bloqueio de perda diária, prevenção de ordens duplicadas em timeout, validação por contrato e monitoramento de cotações obsoletas. Conta REAL permanece bloqueada.
+
+
+## AI policy stored in the program
+- `ctrader-bot/AI_TRADING_POLICY.md` is the versioned mind-map/specification saved with the application. The engine loads it on startup and the dashboard exposes its load status through `/api/strategy-policy`.
+- The policy is a decision specification, not a claim that the current bot already implements every module. Statistical arbitrage, PPO and NLP are explicitly disabled/research-only; do not enable them before historical validation and a DEMO execution test.
+- Z-Score thresholds are candidate signals only. Order-book imbalance, iceberg detection and implied volatility must not be assumed available unless the broker/API actually supplies suitable data.
+- The current code still requires further validation: realized daily-loss reconciliation/halt, duplicate-order prevention after timeouts, symbol-specific volume and SL/TP validation, and an automated macro-news blackout are not yet proven end-to-end.
