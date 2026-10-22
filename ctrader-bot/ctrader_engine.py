@@ -770,7 +770,8 @@ class CTraderDemoBridge:
         if not raw:
             raise RuntimeError("Sem cotação válida para calcular SL/TP; entrada bloqueada.")
         digits = int(state.get("symbol_digits", {}).get(symbol, 5))
-        entry_price = float(raw) / (10 ** digits)
+        # cTrader Open API spot prices use a fixed 1e5 scale, independent of symbol digits.
+        entry_price = float(raw) / 100000.0
         sl_distance, tp_distance = self._protection_distances.get(symbol, (None, None))
         if sl_distance is None or tp_distance is None or sl_distance <= 0 or tp_distance <= 0:
             raise RuntimeError("SL/TP não configurados para este ativo; entrada bloqueada.")
