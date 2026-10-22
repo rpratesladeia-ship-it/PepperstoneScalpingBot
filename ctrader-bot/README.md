@@ -57,3 +57,11 @@ Official docs:
 - Headlines are contextual information only. The current code does not automatically parse calendar events into a high-impact news blackout; this must be added and tested before relying on it to block trades.
 - Automatic trading now refuses to start if `AI_FILTER_ENABLED=true` and no valid trained model is loaded. The concurrent-position ceiling was reduced from 15 to 2.
 - Do not treat the experimental ML trainer as proof of edge. Evaluate spread, commission, slippage, out-of-sample/walk-forward performance, and each instrument's contract specifications before considering any release from the safety block.
+
+
+## Próxima política operacional da IA
+O mapa mental deve ser mantido como especificação versionada no projeto e refletido em regras verificáveis no código: dados, análise, entrada, execução, risco, rotação de ativos, filtros macro, recuperação de erros e relatórios. A estratégia atual de médias+DMS continua experimental e não equivale a IA treinada.
+
+A arbitragem estatística é uma linha de pesquisa separada, desativada até existirem pares configurados e validados, dados sincronizados suficientes, análise de estabilidade/cointegração, custos de spread/comissão/slippage/financiamento e validação walk-forward fora da amostra. Z-Score de ±2 é apenas um candidato a sinal, nunca autorização isolada para ordem. Order book, iceberg, volatilidade implícita, PPO e NLP só podem ser usados quando houver dados/infraestrutura comprovados; Kelly permanece desativada.
+
+O plano de risco conserva uma posição aberta por ativo e exige cinco entradas bem-sucedidas em outros ativos antes de reutilizar um ativo, com cooldown por símbolo. Não há limite global fixo de posições, mas todas as entradas continuam sujeitas à margem, SL/TP, limites de perda e qualidade dos dados. Antes de ampliar a automação, implementar e testar reconciliação de PnL realizado e bloqueio de perda diária, prevenção de ordens duplicadas em timeout, validação por contrato e monitoramento de cotações obsoletas. Conta REAL permanece bloqueada.
