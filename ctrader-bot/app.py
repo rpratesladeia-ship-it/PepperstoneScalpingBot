@@ -64,20 +64,25 @@ async function refresh(){
   const sel=$('account');
   const accountList=(b.accounts||[]).map(a=>({id:String(a.account_id),live:!!a.is_live}));
   const signature=JSON.stringify(accountList);
+  let savedAccount='';try{savedAccount=localStorage.getItem('meuTraderDemoAccountId')||''}catch(_){}
   if(sel.dataset.signature!==signature){
     const previous=sel.value;
     sel.replaceChildren();
     accountList.forEach(a=>{const o=document.createElement('option');o.value=a.id;o.textContent=a.id+' — '+(a.live?'REAL (bloqueada)':'DEMO');o.disabled=a.live;sel.appendChild(o)});
     sel.dataset.signature=signature;
-    if(previous && accountList.some(a=>a.id===previous && !a.live)) sel.value=previous;
+    if(savedAccount && accountList.some(a=>a.id===savedAccount && !a.live)) sel.value=savedAccount;
+    else if(previous && accountList.some(a=>a.id===previous && !a.live)) sel.value=previous;
     else if(b.selected_account_id && accountList.some(a=>a.id===String(b.selected_account_id) && !a.live)) sel.value=String(b.selected_account_id);
+    if(sel.value){try{localStorage.setItem('meuTraderDemoAccountId',sel.value)}catch(_){}}
   }
+  if(savedAccount && accountList.some(a=>a.id===savedAccount && !a.live)) sel.value=savedAccount;
   const q=b.prices||{}; $('quotes').textContent=Object.keys(q).length?Object.entries(q).map(([n,p])=>n+': bid raw '+(p.bid_raw??'—')+' / ask raw '+(p.ask_raw??'—')).join(' | '):'Aguardando preços do servidor cTrader…';
   if(b.last_order)$('result').textContent='Última ordem: '+JSON.stringify(b.last_order);
  }catch(e){$('status').textContent='Não foi possível consultar o estado do servidor.'}
 }
 $('autoToggle').onclick=async()=>{const active=($('autoToggle').textContent||'').startsWith('DESATIVAR');const minutes=Math.floor(Number($('runMinutes').value)||60);if(!active&&(!Number.isFinite(minutes)||minutes<1||minutes>1440)){ $('result').textContent='Informe um tempo entre 1 e 1440 minutos.';return;}const r=await fetch('/api/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!active,duration_minutes:minutes})});const t=await r.text();$('result').textContent=t;setTimeout(refresh,500)};
-$('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
+$('account').addEventListener('change',()=>{try{if($('account').value)localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}});
+$('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}try{localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
 document.querySelectorAll('.trade').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar ordem '+btn.dataset.side+' de '+$('volume').value+' unidade(s) em '+$('symbol').value+' na conta DEMO?'))return;const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:btn.dataset.side,volume_units:Number($('volume').value)})});$('result').textContent=await r.text();setTimeout(refresh,1000)});
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
