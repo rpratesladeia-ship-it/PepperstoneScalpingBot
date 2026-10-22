@@ -43,7 +43,7 @@ class CTraderDemoBridge:
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
             "risk_limits": {"max_positions": 2, "min_free_margin": 25.0},
-            "auto_started_at": None, "auto_deadline": None,
+            "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
             "last_manual_order_at": None, "last_manual_order_result_at": None,
@@ -533,12 +533,15 @@ class CTraderDemoBridge:
                 if not self._state["symbols"]:
                     raise RuntimeError("Nenhum ativo disponível para a automação.")
                 self._auto_enabled = True
+                observe_only = bool(self._ai_enabled and self._ai_model is None)
                 started = time.time()
                 deadline = started + duration_minutes * 60
-                self._state.update(auto_trading=True, auto_started_at=started,
+                self._state.update(auto_trading=True, auto_observe_only=observe_only,
+                                   auto_started_at=started,
                                    auto_duration_seconds=duration_minutes * 60,
                                    auto_deadline=deadline,
-                                   auto_status="Ativo: temporizador iniciado")
+                                   auto_status=("Monitoramento DEMO ativo — sem envio de ordens (modelo IA não instalado)"
+                                                if observe_only else "Ativo: temporizador iniciado"))
             else:
                 self._auto_enabled = False
                 self._state.update(auto_trading=False, auto_started_at=None,
