@@ -48,6 +48,27 @@ class CTraderDemoBridge:
             "last_auto_stop_reason": None,
             "last_manual_order_at": None, "last_manual_order_result_at": None,
         }
+        # Load the versioned AI decision policy stored with the application.
+        self._policy_path = Path(__file__).with_name("AI_TRADING_POLICY.md")
+        try:
+            self._policy_text = self._policy_path.read_text(encoding="utf-8")
+            self._state["strategy_policy"] = {
+                "loaded": True,
+                "path": self._policy_path.name,
+                "mode": "DEMO",
+                "statistical_arbitrage": "research_only_disabled",
+                "summary": "Policy file loaded; critical risk rules are also enforced by code."
+            }
+        except OSError as exc:
+            self._policy_text = ""
+            self._state["strategy_policy"] = {
+                "loaded": False,
+                "path": self._policy_path.name,
+                "mode": "DEMO",
+                "summary": "Policy file unavailable; check deployment artifact."
+            }
+            log.error("AI trading policy file could not be loaded: %s", type(exc).__name__)
+
         self._thread = None
         self._auto_enabled = False
         self._auto_last_signal = {}
