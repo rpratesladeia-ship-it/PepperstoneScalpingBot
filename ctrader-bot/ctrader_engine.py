@@ -398,11 +398,12 @@ class CTraderDemoBridge:
                 self._state["symbol_digits"] = digits
                 self._state["symbols"] = sorted(found.keys())
                 self._state["unavailable_symbols"] = sorted(wanted - set(found.keys()))
-            for symbol_id in found.values():
+            if found:
                 req = ProtoOASubscribeSpotsReq()
                 req.ctidTraderAccountId = int(self._state["selected_account_id"])
-                req.symbolId.append(int(symbol_id))
+                req.symbolId.extend(int(symbol_id) for symbol_id in found.values())
                 client.send(req).addErrback(self._on_error)
+                log.info("Subscribed to %s symbols in one cTrader request", len(found))
         elif message.payloadType == ProtoOASpotEvent().payloadType:
             with self._lock:
                 symbol_id = int(getattr(payload, "symbolId", 0))
