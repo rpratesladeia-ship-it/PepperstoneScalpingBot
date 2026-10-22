@@ -537,11 +537,13 @@ class CTraderDemoBridge:
                     previous_symbol = self._auto_last_entry_symbol
                     self._auto_last_entry_symbol = symbol
                     self._auto_same_symbol_entries = 1
-                    if previous_symbol and previous_symbol != symbol and self._auto_rotation_wait.get(previous_symbol, False):
-                        self._auto_rotation_other_entries[previous_symbol] = self._auto_rotation_other_entries.get(previous_symbol, 0) + 1
-                        if self._auto_rotation_other_entries[previous_symbol] >= self._auto_other_entries_before_reuse:
-                            self._auto_rotation_wait[previous_symbol] = False
-                            self._auto_rotation_other_entries[previous_symbol] = 0
+                    # Every successful entry on a different asset advances all pending rotation counters.
+                    for waiting_symbol in list(self._auto_rotation_wait):
+                        if waiting_symbol != symbol and self._auto_rotation_wait.get(waiting_symbol, False):
+                            self._auto_rotation_other_entries[waiting_symbol] = self._auto_rotation_other_entries.get(waiting_symbol, 0) + 1
+                            if self._auto_rotation_other_entries[waiting_symbol] >= self._auto_other_entries_before_reuse:
+                                self._auto_rotation_wait[waiting_symbol] = False
+                                self._auto_rotation_other_entries[waiting_symbol] = 0
                 if self._auto_same_symbol_entries >= self._auto_max_consecutive_per_symbol:
                     self._auto_rotation_wait[symbol] = True
                     self._auto_rotation_other_entries[symbol] = 0
