@@ -164,7 +164,7 @@ async def diagnostico_ctrader():
 
 @app.get("/health")
 async def health():
-    return {"status":"online","app":APP_NAME,"oauth_configured":bool(CLIENT_ID and CLIENT_SECRET and REDIRECT_URI),"order_execution":False,"mode":"demo_only"}
+    return {"status":"online","app":APP_NAME,"oauth_configured":bool(CLIENT_ID and CLIENT_SECRET and REDIRECT_URI),"order_execution_available":True,"execution_mode":"demo_only_after_account_authorization","mode":"demo_only"}
 
 @app.get("/api/status")
 async def api_status(request: Request):
