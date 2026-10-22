@@ -642,11 +642,13 @@ class CTraderDemoBridge:
                 )
                 return
             if self._ai_enabled:
-                # Fail closed: allow observation, never orders, until a valid ML model exists.
                 if self._ai_model is None:
-                    allowed, probability, reason = False, None, (
-                        "Monitoramento DEMO: sinal registrado, mas nenhuma ordem será enviada "
-                        "até instalar e validar o modelo de IA treinado."
+                    # Explicitly experimental DEMO execution: technical crossover + DMS,
+                    # strict position cap, per-symbol cooldown and server-side SL/TP still apply.
+                    # This is not trained AI and must never be described as such.
+                    allowed, probability, reason = True, None, (
+                        "Modo experimental DEMO: modelo ML treinado ausente; sinal técnico+DMS "
+                        "autorizado com limite de posições, cooldown e SL/TP configurados."
                     )
                 else:
                     try:
