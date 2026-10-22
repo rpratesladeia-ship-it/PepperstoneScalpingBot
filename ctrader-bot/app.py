@@ -37,6 +37,7 @@ small{color:#a9b6c8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.t
 <a class="btn" href="/connect">Conectar conta cTrader</a>
 <p class="muted"><small>* Os ativos dependem da corretora e da conta conectada. Cripto pode não estar disponível em todos os brokers cTrader.</small></p></div>
 <div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><h3>IA de mercado — análise experimental</h3><p class="muted">Estimativas técnicas de curto prazo baseadas em ticks reais recebidos. Não é modelo ML treinado nem garantia de resultado.</p><div id="marketAi" class="muted">Aguardando histórico de cotações…</div><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="10080" step="1" value="10080" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><div class="tile" style="margin:8px 0"><b>Registro de horários (Brasília)</b><p class="muted" id="autoTimes">Início automático: —<br>Parada automática: —</p><p class="muted" id="manualTimes">Última ordem manual: —</p></div><button id="autoToggle" style="padding:14px;width:100%;border:0;border-radius:10px;background:#f5c66b;color:#17202b;font-weight:800">ATIVAR ENTRADAS AUTOMÁTICAS DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
+<div class="card"><h2>Política operacional da IA</h2><p id="policyStatus" class="muted">Verificando política salva no programa…</p><ul class="muted"><li>Conta DEMO; conta REAL bloqueada.</li><li>Uma posição aberta por ativo e cinco entradas bem-sucedidas em outros ativos antes de reutilizar o ativo.</li><li>Arbitragem estatística, PPO e NLP ficam desativados até validação fora da amostra.</li><li>Z-Score isolado não autoriza ordem; considerar custos, spread, slippage e qualidade dos dados.</li><li>Margem, SL/TP, estado da conexão e frescor das cotações devem ser verificados.</li></ul><p><a href="https://github.com/rpratesladeia-ship-it/PepperstoneScalpingBot/blob/ctrader-multimarket-demo/ctrader-bot/AI_TRADING_POLICY.md" target="_blank" rel="noopener">Abrir especificação completa da IA</a></p></div>
 <div class="card"><h2>Calendário econômico e notícias oficiais</h2><p class="muted">Contexto para planejar as sessões; manchetes não são sinais de compra/venda. Horários oficiais devem ser conferidos na fonte.</p><p id="contextStatus" class="muted">Carregando fontes oficiais…</p><div id="contextNews" class="muted">Aguardando atualização…</div><p class="muted"><a href="https://www.federalreserve.gov/newsevents/calendar.htm" target="_blank" rel="noopener">Calendário do Federal Reserve (FOMC)</a><br><a href="https://www.bls.gov/schedule/2026/" target="_blank" rel="noopener">Calendário de indicadores dos EUA (BLS)</a><br><a href="https://www.bea.gov/news/schedule/" target="_blank" rel="noopener">Calendário econômico do BEA</a></p></div>
 <div class="card"><h2>Segurança</h2><p class="muted">Não compartilhe senhas, códigos de autenticação, client secret ou tokens. As credenciais do aplicativo ficam somente nas variáveis secretas do servidor.</p></div>
 </main><script>
@@ -92,7 +93,8 @@ $('account').addEventListener('change',()=>{try{if($('account').value)localStora
 $('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}try{localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
 document.querySelectorAll('.trade').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar ordem '+btn.dataset.side+' de '+$('volume').value+' unidade(s) em '+$('symbol').value+' na conta DEMO?'))return;const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:btn.dataset.side,volume_units:Number($('volume').value)})});$('result').textContent=await r.text();setTimeout(refresh,1000)});
 async function refreshMarketContext(){try{const r=await fetch('/api/market-context',{cache:'no-store'});const d=await r.json();$('contextStatus').textContent='Atualizado: '+(d.updated_at||'—')+' | Fontes com resposta: '+d.feeds_ok+'/'+d.feeds_total+' | Próximo refresh em cerca de 15 min.';const root=$('contextNews');root.replaceChildren();(d.headlines||[]).forEach(item=>{const p=document.createElement('p');p.className='tile';const a=document.createElement('a');a.href=item.url;a.target='_blank';a.rel='noopener';a.textContent=item.source+': '+item.title;p.appendChild(a);root.appendChild(p)});if(!(d.headlines||[]).length){root.textContent='Nenhuma manchete foi obtida agora. Use os calendários oficiais acima; isso não interfere no filtro de risco.'}}catch(_){$('contextStatus').textContent='Fontes externas temporariamente indisponíveis; consulte os calendários oficiais.'}}
-refresh();setInterval(refresh,3000);refreshMarketContext();setInterval(refreshMarketContext,900000);
+async function refreshStrategyPolicy(){try{const r=await fetch('/api/strategy-policy',{cache:'no-store'});const d=await r.json();$('policyStatus').textContent=d.loaded?'Política carregada do arquivo '+d.path+' | Modo: DEMO | Arbitragem estatística: pesquisa desativada.':'Política não carregada: '+d.summary}catch(_){$('policyStatus').textContent='Não foi possível confirmar a política carregada.'}}
+refresh();setInterval(refresh,3000);refreshMarketContext();setInterval(refreshMarketContext,900000);refreshStrategyPolicy();setInterval(refreshStrategyPolicy,30000);
 </script></body></html>"""
 
 @app.get("/", response_class=HTMLResponse)
@@ -313,6 +315,26 @@ _MARKET_FEEDS = [
     ("BLS", "https://www.bls.gov/feed/bls_latest.rss"),
     ("BEA", "https://www.bea.gov/news/rss.xml"),
 ]
+
+
+@app.get("/api/strategy-policy")
+async def strategy_policy_status():
+    state = bridge.snapshot()
+    policy = state.get("strategy_policy", {})
+    return {
+        "loaded": bool(policy.get("loaded")),
+        "path": policy.get("path", "AI_TRADING_POLICY.md"),
+        "mode": "DEMO",
+        "statistical_arbitrage": "research_only_disabled",
+        "summary": policy.get("summary", "Estado da política indisponível."),
+        "critical_rules": {
+            "one_open_position_per_symbol": True,
+            "other_successful_entries_before_symbol_reuse": 5,
+            "real_account_allowed": False,
+            "statistical_arbitrage_enabled": False,
+            "zscore_alone_authorizes_order": False
+        }
+    }
 
 @app.get("/api/market-context")
 async def market_context():
