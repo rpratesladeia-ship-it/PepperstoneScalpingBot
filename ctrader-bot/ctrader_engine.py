@@ -256,11 +256,15 @@ class CTraderDemoBridge:
     def _on_error(self, failure):
         try:
             error_type = failure.type.__name__
+            error_text = str(failure.value)[:240]
         except Exception:
             error_type = "ErroDeTransporte"
-        log.warning("cTrader transport failure: %s", error_type)
+            error_text = ""
+        # Twisted Deferred timeouts can be request/response timeouts even while
+        # the TCP socket is reachable; keep the wording precise for diagnosis.
+        log.warning("cTrader request/deferred failure: type=%s detail=%s", error_type, error_text)
         with self._lock:
-            self._state["last_error"] = "Falha de comunicação (" + error_type + "). Reconecte pelo botão cTrader."
+            self._state["last_error"] = "Falha na solicitação cTrader (" + error_type + "). Consulte diagnóstico."
             self._state["application_authorized"] = False
             self._state["account_authorized"] = False
         return None
@@ -269,8 +273,12 @@ class CTraderDemoBridge:
         if message.payloadType == ProtoHeartbeatEvent().payloadType:
             return
         payload = Protobuf.extract(message)
+        log.info("cTrader message received: payloadType=%s class=%s",
+                 getattr(message, "payloadType", None), type(payload).__name__)
         if message.payloadType == ProtoOAErrorRes().payloadType:
             code = str(getattr(payload, "errorCode", "erro cTrader"))
+            description = str(getattr(payload, "description", "") or "")[:240]
+            log.warning("cTrader API response: code=%s description=%s", code[:100], description)
             # Restore the previous flow: cTrader may report ALREADY_LOGGED_IN
             # when application auth is already established on this session.
             # Continue account discovery, then require explicit DEMO account auth.
@@ -286,7 +294,7 @@ class CTraderDemoBridge:
             with self._lock:
                 self._state["last_error"] = "cTrader recusou uma solicitação: " + code
                 self._state["account_authorized"] = False
-            log.warning("cTrader API error code: %s", code[:100])
+            log.warning("cTrader API request rejected: code=%s description=%s", code[:100], description)
             return
         if message.payloadType == ProtoOAApplicationAuthRes().payloadType:
             with self._lock:
