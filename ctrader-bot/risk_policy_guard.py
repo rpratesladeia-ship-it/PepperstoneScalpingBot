@@ -12,10 +12,10 @@ class RiskDecision:
 
 class DemoRiskGuard:
     """In-memory pre-trade guard; production use requires persistent reconciliation."""
-    def __init__(self, max_positions=3, max_daily_loss_pct=2.0,
+    def __init__(self, max_positions=None, max_daily_loss_pct=2.0,
                  max_operations_day=10, max_consecutive_losses=3,
                  min_free_margin=25.0):
-        self.max_positions = int(max_positions)
+        self.max_positions = None if max_positions is None else int(max_positions)
         self.max_daily_loss_pct = float(max_daily_loss_pct)
         self.max_operations_day = int(max_operations_day)
         self.max_consecutive_losses = int(max_consecutive_losses)
@@ -50,7 +50,7 @@ class DemoRiskGuard:
                 return RiskDecision(False, "stale_quote")
             if self._halt_reason:
                 return RiskDecision(False, self._halt_reason)
-            if int(open_positions) >= self.max_positions:
+            if self.max_positions is not None and int(open_positions) >= self.max_positions:
                 return RiskDecision(False, "global_position_limit")
             if free_margin is None or float(free_margin) < self.min_free_margin:
                 return RiskDecision(False, "insufficient_or_unknown_free_margin")
