@@ -44,7 +44,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 3, "min_free_margin": 25.0, "max_daily_loss_pct": 2.0, "max_operations_day": 10},
+            "risk_limits": {"max_positions": None, "min_free_margin": 25.0, "max_daily_loss_pct": 2.0, "max_operations_day": 10},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -75,7 +75,7 @@ class CTraderDemoBridge:
             }
             log.error("AI strategy policy load/validation failed: %s", type(exc).__name__)
 
-        self._risk_guard = DemoRiskGuard(max_positions=3, max_daily_loss_pct=2.0, max_operations_day=10, max_consecutive_losses=3, min_free_margin=25.0)
+        self._risk_guard = DemoRiskGuard(max_positions=None, max_daily_loss_pct=2.0, max_operations_day=10, max_consecutive_losses=3, min_free_margin=25.0)
         self._thread = None
         self._auto_enabled = False
         self._auto_last_signal = {}
@@ -640,10 +640,7 @@ class CTraderDemoBridge:
                    for position in self._tracked_positions.values()):
                 self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
-            if len(self._tracked_positions) >= int(self._state.get("risk_limits", {}).get("max_positions", 3)):
-                self._state["auto_status"] = "Entrada bloqueada: limite global de 3 posições DEMO atingido"
-                self._record_event("risk_block", symbol=symbol, reason="global_position_limit")
-                return
+            # Sem limite global de posições: os bloqueios por ativo, margem e perdas permanecem ativos.
             free_margin = self._state.get("free_margin")
             if free_margin is not None and free_margin < self._state["risk_limits"]["min_free_margin"]:
                 self._state["auto_status"] = "Entrada bloqueada: margem livre abaixo do mínimo de segurança"
@@ -824,8 +821,6 @@ class CTraderDemoBridge:
         if not risk_decision.allowed:
             self._record_event("risk_block", symbol=symbol, reason=risk_decision.reason)
             raise RuntimeError("Entrada bloqueada pelo controle de risco: " + risk_decision.reason)
-        if len(self._tracked_positions) >= int(state.get("risk_limits", {}).get("max_positions", 3)):
-            raise RuntimeError("Limite global de 3 posições DEMO atingido")
         if not symbol_id:
             raise ValueError("Ativo não encontrado na conta")
         if not state["prices"].get(symbol):
