@@ -42,7 +42,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 15, "min_free_margin": 25.0},
+            "risk_limits": {"max_positions": 2, "min_free_margin": 25.0},
             "auto_started_at": None, "auto_deadline": None,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -61,7 +61,7 @@ class CTraderDemoBridge:
         self._auto_rotation_other_entries = {}
         self._auto_max_consecutive_per_symbol = 3
         self._auto_other_entries_before_reuse = 5
-        self._auto_max_positions = 15
+        self._auto_max_positions = 2
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -526,6 +526,11 @@ class CTraderDemoBridge:
                     raise RuntimeError("Conecte e autorize uma conta DEMO antes de ativar.")
                 if not account or account["is_live"]:
                     raise PermissionError("Automação bloqueada: somente conta DEMO.")
+                if self._ai_enabled and self._ai_model is None:
+                    raise RuntimeError(
+                        "Automação bloqueada por segurança: o filtro IA está ligado, mas ainda não existe "
+                        "modelo treinado válido. O painel continuará em DEMO; treine e valide o modelo antes de liberar entradas."
+                    )
                 if not self._state["symbols"]:
                     raise RuntimeError("Nenhum ativo disponível para a automação.")
                 self._auto_enabled = True
