@@ -47,7 +47,7 @@ async function refresh(){
   $('status').textContent=!d.oauth_authorized?'Não conectado. Toque em Conectar conta cTrader.':!b.connected?'Autorização recebida; conectando à API cTrader…':!b.application_authorized?'Conectado; aguardando autorização do aplicativo…':!b.accounts?.length?'Aplicativo autorizado; aguardando lista de contas…':!b.account_authorized?'Contas carregadas. Selecione uma conta marcada DEMO e valide.': 'Conta DEMO autorizada. Verifique as cotações antes de testar.';
   $('accountInfo').textContent='Conexão: '+(b.connected?'online':'aguardando')+' | App autorizado: '+(b.application_authorized?'sim':'não')+' | Conta autorizada: '+(b.account_authorized?'sim':'não')+(b.last_error?' | Aviso: '+b.last_error:'');
   $('symbols').textContent=(b.symbols||[]).join(', ')||'Nenhum ativo ainda';
-  $('execution').textContent=b.auto_trading?'AUTOMÁTICA DEMO ATIVA':(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
+  $('execution').textContent=b.auto_trading?(b.auto_observe_only?'MONITORAMENTO DEMO ATIVO — SEM ORDENS':'AUTOMÁTICA DEMO ATIVA'):(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');
   const ai=b.ai_filter||{};
   $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'BLOQUEIO DE SEGURANÇA — modelo ML treinado ainda não instalado; entradas automáticas não podem iniciar'):'desligado');
