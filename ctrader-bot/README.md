@@ -35,3 +35,12 @@ Official docs:
 - https://help.ctrader.com/open-api/pt/
 - https://help.ctrader.com/open-api/pt/account-authentication/
 - https://help.ctrader.com/open-api/pt/api-application/
+
+
+## Modelo de IA supervisionado (treino offline)
+- O filtro de IA agora bloqueia entradas automáticas quando não existe um modelo treinado válido; a pontuação heurística não é mais usada como substituto silencioso de IA.
+- O script `ctrader-bot/train_ai_model.py` treina um classificador direcional simples com CSV histórico. Exemplo:
+  `python ctrader-bot/train_ai_model.py historico.csv --close Close --horizon 3`
+- Use um arquivo por ativo, com candles em ordem cronológica e coluna `Close`. O treino exige pelo menos 600 candles e mantém os 20% finais para avaliação temporal. O modelo só é salvo se superar a previsão de classe majoritária no trecho de teste.
+- O arquivo de saída padrão é `ctrader-bot/ai_model.json`; no Render, configure `AI_MODEL_PATH` para um caminho persistente/disponível no deploy ou inclua um modelo validado no artefato de deploy. Render free pode perder arquivos locais ao reiniciar.
+- Este script é uma primeira base de treinamento, não uma prova de rentabilidade. Faça validação walk-forward, custos, spread, slippage e teste DEMO antes de qualquer uso. Não ative conta REAL.
