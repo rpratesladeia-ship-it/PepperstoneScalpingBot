@@ -37,6 +37,7 @@ small{color:#a9b6c8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.t
 <a class="btn" href="/connect">Conectar conta cTrader</a>
 <p class="muted"><small>* Os ativos dependem da corretora e da conta conectada. Cripto pode não estar disponível em todos os brokers cTrader.</small></p></div>
 <div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><label for="account">Conta DEMO</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><h3>IA de mercado — análise experimental</h3><p class="muted">Estimativas técnicas de curto prazo baseadas em ticks reais recebidos. Não é modelo ML treinado nem garantia de resultado.</p><div id="marketAi" class="muted">Aguardando histórico de cotações…</div><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="1440" step="1" value="60" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><div class="tile" style="margin:8px 0"><b>Registro de horários (Brasília)</b><p class="muted" id="autoTimes">Início automático: —<br>Parada automática: —</p><p class="muted" id="manualTimes">Última ordem manual: —</p></div><button id="autoToggle" style="padding:14px;width:100%;border:0;border-radius:10px;background:#f5c66b;color:#17202b;font-weight:800">ATIVAR ENTRADAS AUTOMÁTICAS DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
+<div class="card"><h2>Calendário econômico e notícias oficiais</h2><p class="muted">Contexto para planejar as sessões; manchetes não são sinais de compra/venda. Horários oficiais devem ser conferidos na fonte.</p><p id="contextStatus" class="muted">Carregando fontes oficiais…</p><div id="contextNews" class="muted">Aguardando atualização…</div><p class="muted"><a href="https://www.federalreserve.gov/newsevents/calendar.htm" target="_blank" rel="noopener">Calendário do Federal Reserve (FOMC)</a><br><a href="https://www.bls.gov/schedule/2026/" target="_blank" rel="noopener">Calendário de indicadores dos EUA (BLS)</a><br><a href="https://www.bea.gov/news/schedule/" target="_blank" rel="noopener">Calendário econômico do BEA</a></p></div>
 <div class="card"><h2>Segurança</h2><p class="muted">Não compartilhe senhas, códigos de autenticação, client secret ou tokens. As credenciais do aplicativo ficam somente nas variáveis secretas do servidor.</p></div>
 </main><script>
 const $=id=>document.getElementById(id);
@@ -84,7 +85,8 @@ $('autoToggle').onclick=async()=>{const active=($('autoToggle').textContent||'')
 $('account').addEventListener('change',()=>{try{if($('account').value)localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}});
 $('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}try{localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
 document.querySelectorAll('.trade').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar ordem '+btn.dataset.side+' de '+$('volume').value+' unidade(s) em '+$('symbol').value+' na conta DEMO?'))return;const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:btn.dataset.side,volume_units:Number($('volume').value)})});$('result').textContent=await r.text();setTimeout(refresh,1000)});
-refresh();setInterval(refresh,3000);
+async function refreshMarketContext(){try{const r=await fetch('/api/market-context',{cache:'no-store'});const d=await r.json();$('contextStatus').textContent='Atualizado: '+(d.updated_at||'—')+' | Fontes com resposta: '+d.feeds_ok+'/'+d.feeds_total+' | Próximo refresh em cerca de 15 min.';const root=$('contextNews');root.replaceChildren();(d.headlines||[]).forEach(item=>{const p=document.createElement('p');p.className='tile';const a=document.createElement('a');a.href=item.url;a.target='_blank';a.rel='noopener';a.textContent=item.source+': '+item.title;p.appendChild(a);root.appendChild(p)});if(!(d.headlines||[]).length){root.textContent='Nenhuma manchete foi obtida agora. Use os calendários oficiais acima; isso não interfere no filtro de risco.'}}catch(_){$('contextStatus').textContent='Fontes externas temporariamente indisponíveis; consulte os calendários oficiais.'}}
+refresh();setInterval(refresh,3000);refreshMarketContext();setInterval(refreshMarketContext,900000);
 </script></body></html>"""
 
 @app.get("/", response_class=HTMLResponse)
@@ -292,3 +294,69 @@ async def disconnect(request: Request):
     if sid: TOKENS.pop(sid,None)
     request.session.clear()
     return RedirectResponse("/",status_code=303)
+
+# Market context: official news feeds and primary-source economic calendars.
+# Cache responses to avoid polling external sites every time the dashboard refreshes.
+import asyncio
+import datetime
+import xml.etree.ElementTree as ET
+
+_MARKET_CONTEXT_CACHE = {"expires": 0, "data": None}
+_MARKET_FEEDS = [
+    ("Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    ("BLS", "https://www.bls.gov/feed/bls_latest.rss"),
+    ("BEA", "https://www.bea.gov/news/rss.xml"),
+]
+
+@app.get("/api/market-context")
+async def market_context():
+    now = time.time()
+    cached = _MARKET_CONTEXT_CACHE.get("data")
+    if cached and now < _MARKET_CONTEXT_CACHE.get("expires", 0):
+        return cached
+
+    async def read_feed(source, url, client):
+        try:
+            response = await client.get(url, headers={"User-Agent": "MeuTraderMultimercado/1.0"}, timeout=6.0)
+            response.raise_for_status()
+            root = ET.fromstring(response.text)
+            items = []
+            for node in root.iter():
+                tag = node.tag.rsplit("}", 1)[-1].lower()
+                if tag not in {"item", "entry"}:
+                    continue
+                fields = {}
+                for child in list(node):
+                    name = child.tag.rsplit("}", 1)[-1].lower()
+                    if name in {"title", "link", "published", "updated", "pubdate", "description"}:
+                        fields[name] = (child.text or "").strip()
+                        if name == "link" and not fields[name]:
+                            fields[name] = child.attrib.get("href", "")
+                link = fields.get("link", "")
+                if link and link.startswith("http") and fields.get("title"):
+                    items.append({"source": source, "title": fields["title"][:220],
+                                  "url": link, "published": fields.get("published") or fields.get("updated") or fields.get("pubdate") or ""})
+                if len(items) >= 4:
+                    break
+            return items
+        except Exception as exc:
+            log.info("Market context feed unavailable: source=%s error=%s", source, type(exc).__name__)
+            return None
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        results = await asyncio.gather(*(read_feed(source, url, client) for source, url in _MARKET_FEEDS))
+    headlines = [item for result in results if result for item in result]
+    data = {
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "feeds_ok": sum(result is not None for result in results),
+        "feeds_total": len(_MARKET_FEEDS),
+        "headlines": headlines[:10],
+        "calendar_sources": [
+            {"name": "Federal Reserve / FOMC", "url": "https://www.federalreserve.gov/newsevents/calendar.htm"},
+            {"name": "BLS releases", "url": "https://www.bls.gov/schedule/2026/"},
+            {"name": "BEA releases", "url": "https://www.bea.gov/news/schedule/"},
+        ],
+        "notice": "Manchetes são contexto, não sinal operacional. Datas e horários devem ser confirmados nas fontes oficiais."
+    }
+    _MARKET_CONTEXT_CACHE.update(data=data, expires=now + 900)
+    return data
