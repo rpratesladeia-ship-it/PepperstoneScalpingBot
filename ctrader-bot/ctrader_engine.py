@@ -528,11 +528,8 @@ class CTraderDemoBridge:
                     raise RuntimeError("Conecte e autorize uma conta DEMO antes de ativar.")
                 if not account or account["is_live"]:
                     raise PermissionError("Automação bloqueada: somente conta DEMO.")
-                if self._ai_enabled and self._ai_model is None:
-                    raise RuntimeError(
-                        "Automação bloqueada por segurança: o filtro IA está ligado, mas ainda não existe "
-                        "modelo treinado válido. O painel continuará em DEMO; treine e valide o modelo antes de liberar entradas."
-                    )
+                # Without a trained model, allow timed observation only.
+                # The signal loop's AI gate below fails closed before any order is sent.
                 if not self._state["symbols"]:
                     raise RuntimeError("Nenhum ativo disponível para a automação.")
                 self._auto_enabled = True
@@ -642,12 +639,11 @@ class CTraderDemoBridge:
                 )
                 return
             if self._ai_enabled:
-                # Fail closed: do not label a heuristic score as trained AI.
-                # Automatic entries stay blocked until a valid, trained model is installed.
+                # Fail closed: allow observation, never orders, until a valid ML model exists.
                 if self._ai_model is None:
                     allowed, probability, reason = False, None, (
-                        "Entrada bloqueada: modelo de IA treinado não instalado. "
-                        "A análise técnica pode gerar sinais, mas não autoriza ordens automáticas."
+                        "Monitoramento DEMO: sinal registrado, mas nenhuma ordem será enviada "
+                        "até instalar e validar o modelo de IA treinado."
                     )
                 else:
                     try:
@@ -662,7 +658,10 @@ class CTraderDemoBridge:
                     allowed=bool(allowed), reason=reason,
                     mode="ml" if self._ai_model is not None else "experimental")
                 if not allowed:
-                    self._state["auto_status"] = "Entrada " + side + " bloqueada pelo filtro IA experimental em " + symbol + ": " + reason
+                    self._state["auto_status"] = (
+                        "MONITORAMENTO DEMO — sinal " + side + " em " + symbol
+                        + "; ordem NÃO enviada. " + reason
+                    )
                     return
             self._auto_last_trade_at[symbol] = now
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
