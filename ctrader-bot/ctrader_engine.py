@@ -674,10 +674,22 @@ class CTraderDemoBridge:
             if dms:
                 self._state["dms_filter"]["last"][symbol] = dms
             if not side:
+                self._record_event("signal_check", symbol=symbol, result="no_crossover",
+                    samples=len(prices), fast_now=round(fast_now, 5), slow_now=round(slow_now, 5))
                 return
             self._record_event("signal", symbol=symbol, side=side,
                 price_raw=prices[-1], dms=dms, ai_enabled=self._ai_enabled)
+            with self._lock:
+                self._state["last_signal"] = {
+                    "symbol": symbol, "side": side, "price_raw": prices[-1],
+                    "dms": dms, "timestamp": now, "decision": "checking_filters"
+                }
             if not dms or dms["direction"] != side or dms["adx"] < self._dms_min_strength:
+                reason = "DMS direction/strength filter"
+                with self._lock:
+                    self._state["last_signal"]["decision"] = "blocked_by_dms"
+                    self._state["last_signal"]["reason"] = reason
+                self._record_event("signal_rejected", symbol=symbol, side=side, reason=reason, dms=dms)
                 self._state["auto_status"] = (
                     "Entrada " + side + " bloqueada pelo DMS 14 em " + symbol
                     + " (DI+ " + str(dms["di_plus"] if dms else "—")
@@ -713,6 +725,7 @@ class CTraderDemoBridge:
                     )
                     return
             self._auto_last_trade_at[symbol] = now
+            self._state["last_signal"]["decision"] = "approved_for_order"
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
         try:
             # One minimal unit; this is demo-only and intentionally throttled.
@@ -741,6 +754,9 @@ class CTraderDemoBridge:
         except Exception as exc:
             self._record_event("entry_error", symbol=symbol, side=side, error=str(exc)[:300])
             with self._lock:
+                if self._state.get("last_signal"):
+                    self._state["last_signal"]["decision"] = "order_error"
+                    self._state["last_signal"]["reason"] = str(exc)[:300]
                 self._state["auto_status"] = "Entrada bloqueada: " + str(exc)[:140]
             log.warning("Automatic demo entry blocked for %s: %s", symbol, type(exc).__name__)
 
