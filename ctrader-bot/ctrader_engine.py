@@ -43,6 +43,13 @@ class CTraderDemoBridge:
         self._auto_history = {}
         self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
+        # Rotation guard: max 3 consecutive successful entries per symbol, then 5 other-symbol entries before reuse.
+        self._auto_last_entry_symbol = None
+        self._auto_same_symbol_entries = 0
+        self._auto_rotation_wait = {}
+        self._auto_rotation_other_entries = {}
+        self._auto_max_consecutive_per_symbol = 3
+        self._auto_other_entries_before_reuse = 5
         self._auto_max_positions = 15
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
@@ -473,6 +480,15 @@ class CTraderDemoBridge:
                 return
             if now - self._auto_last_trade_at.get(symbol, 0) < self._auto_cooldown_seconds:
                 return
+            if self._auto_rotation_wait.get(symbol, False):
+                waited = self._auto_rotation_other_entries.get(symbol, 0)
+                if waited < self._auto_other_entries_before_reuse:
+                    self._state["auto_status"] = (
+                        "Rotação de ativos: " + symbol + " aguardando "
+                        + str(self._auto_other_entries_before_reuse - waited)
+                        + " entrada(s) em outros ativos antes de liberar novamente"
+                    )
+                    return
             prices = list(history)
             previous = prices[:-1]
             fast_prev = sum(previous[-10:-1]) / 9
@@ -514,7 +530,22 @@ class CTraderDemoBridge:
             # One minimal unit; this is demo-only and intentionally throttled.
             self.place_demo_market_order(symbol, side, 1)
             with self._lock:
-                self._state["auto_status"] = "Ordem DEMO enviada para confirmação: " + side + " " + symbol
+                # Update rotation only after the order call succeeds.
+                if self._auto_last_entry_symbol == symbol:
+                    self._auto_same_symbol_entries += 1
+                else:
+                    previous_symbol = self._auto_last_entry_symbol
+                    self._auto_last_entry_symbol = symbol
+                    self._auto_same_symbol_entries = 1
+                    if previous_symbol and previous_symbol != symbol and self._auto_rotation_wait.get(previous_symbol, False):
+                        self._auto_rotation_other_entries[previous_symbol] = self._auto_rotation_other_entries.get(previous_symbol, 0) + 1
+                        if self._auto_rotation_other_entries[previous_symbol] >= self._auto_other_entries_before_reuse:
+                            self._auto_rotation_wait[previous_symbol] = False
+                            self._auto_rotation_other_entries[previous_symbol] = 0
+                if self._auto_same_symbol_entries >= self._auto_max_consecutive_per_symbol:
+                    self._auto_rotation_wait[symbol] = True
+                    self._auto_rotation_other_entries[symbol] = 0
+                self._state["auto_status"] = "Ordem DEMO enviada: " + side + " " + symbol + " | rotação de ativos aplicada"
         except Exception as exc:
             with self._lock:
                 self._state["auto_status"] = "Entrada bloqueada: " + str(exc)[:140]
