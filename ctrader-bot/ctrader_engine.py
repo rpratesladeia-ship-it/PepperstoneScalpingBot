@@ -144,6 +144,24 @@ class CTraderDemoBridge:
         except OSError:
             log.exception("Could not persist trading audit event")
 
+    def read_recent_events(self, limit: int = 200):
+        limit = max(1, min(int(limit), 1000))
+        try:
+            with self._event_log_lock:
+                if not self._event_log_path.exists():
+                    return []
+                lines = self._event_log_path.read_text(encoding="utf-8").splitlines()[-limit:]
+            events = []
+            for line in lines:
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+            return events
+        except OSError:
+            log.exception("Could not read trading audit events")
+            return []
+
     def snapshot(self):
         with self._lock:
             return dict(self._state)
