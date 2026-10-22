@@ -63,12 +63,12 @@ class CTraderDemoBridge:
         # DMS(14) tick-based prototype; not canonical OHLC ADX.
         self._dms_period = 14
         self._dms_min_strength = 20.0
-        self._ai_enabled = os.getenv("AI_FILTER_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+        self._ai_enabled = os.getenv("AI_FILTER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
         self._ai_model = load_model()
         self._state["ai_filter"] = {"enabled": self._ai_enabled, "model_loaded": self._ai_model is not None,
-                                    "status": ("Filtro IA ligado" if self._ai_enabled and self._ai_model else
-                                               "IA ligada sem modelo: entradas serão bloqueadas" if self._ai_enabled else
-                                               "Filtro IA desligado; aguardando modelo treinado")}
+                                    "status": ("Modelo ML treinado ativo" if self._ai_enabled and self._ai_model else
+                                               "Filtro técnico experimental ativo; modelo ML ainda não treinado" if self._ai_enabled else
+                                               "Filtro IA desligado")}
         self._state["dms_filter"] = {"enabled": True, "period": 14, "min_strength": 20.0, "method": "tick approximation", "last": {}}
         # Initial DEMO protection distances in absolute price units; review per broker/symbol.
         # Absolute price distances; DEMO-only until each broker symbol is validated.
@@ -515,14 +515,36 @@ class CTraderDemoBridge:
                 return
             if self._ai_enabled:
                 try:
-                    allowed, probability, reason = evaluate_ml_gate(prices, side, self._ai_model)
-                except (ValueError, TypeError) as exc:
+                    if self._ai_model is not None:
+                        allowed, probability, reason = evaluate_ml_gate(prices, side, self._ai_model)
+                    else:
+                        # Transparent fallback: experimental technical score, NOT a trained or calibrated ML model.
+                        values = [float(x) for x in prices]
+                        r3 = values[-1] / values[-4] - 1.0
+                        r8 = values[-1] / values[-9] - 1.0
+                        r14 = values[-1] / values[-15] - 1.0
+                        def _ema(vals, period):
+                            alpha = 2.0 / (period + 1.0)
+                            value = vals[0]
+                            for item in vals[1:]:
+                                value = alpha * item + (1.0 - alpha) * value
+                            return value
+                        gap = (_ema(values[-21:], 9) - _ema(values[-21:], 21)) / values[-1]
+                        rets = [values[i] / values[i-1] - 1.0 for i in range(len(values)-14, len(values)) if values[i-1] > 0]
+                        movement = sum(abs(x) for x in rets)
+                        efficiency = sum(rets) / movement if movement else 0.0
+                        score = max(-4.0, min(4.0, 900.0*r3 + 450.0*r8 + 250.0*r14 + 1800.0*gap + 1.4*efficiency))
+                        probability = 1.0 / (1.0 + __import__("math").exp(-score))
+                        allowed = probability >= 0.55 if side == "BUY" else probability <= 0.45
+                        reason = ("filtro técnico experimental alinhado ao sinal" if allowed else
+                                  "filtro técnico experimental não confirmou o sinal")
+                except (ValueError, TypeError, ZeroDivisionError, OverflowError):
                     allowed, probability, reason = False, None, "IA não conseguiu avaliar os preços; entrada bloqueada"
                 self._state["ai_filter"]["last"] = {"symbol": symbol, "side": side,
                     "probability_up": round(probability, 4) if probability is not None else None,
-                    "reason": reason}
+                    "reason": reason, "mode": "ml" if self._ai_model is not None else "experimental"}
                 if not allowed:
-                    self._state["auto_status"] = "Entrada " + side + " bloqueada pela IA em " + symbol + ": " + reason
+                    self._state["auto_status"] = "Entrada " + side + " bloqueada pelo filtro IA experimental em " + symbol + ": " + reason
                     return
             self._auto_last_trade_at[symbol] = now
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
