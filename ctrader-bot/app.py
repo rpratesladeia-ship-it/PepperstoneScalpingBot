@@ -13,9 +13,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger("trader-ctrader")
 APP_NAME = "Meu Trader Multimercado"
-CLIENT_ID = os.getenv("CTRADER_CLIENT_ID", "").strip()
-CLIENT_SECRET = os.getenv("CTRADER_CLIENT_SECRET", "").strip()
-REDIRECT_URI = os.getenv("CTRADER_REDIRECT_URI", "").strip()
+CLIENT_ID = (os.getenv("CTRADER_CLIENT_ID") or os.getenv("CLIENT_ID") or "").strip()
+CLIENT_SECRET = (os.getenv("CTRADER_CLIENT_SECRET") or os.getenv("CLIENT_SECRET") or "").strip()
+REDIRECT_URI = (os.getenv("CTRADER_REDIRECT_URI") or os.getenv("REDIRECT_URI") or "").strip()
 SESSION_SECRET = os.getenv("SESSION_SECRET", "").strip()
 # Prototype: tokens remain in memory only and are cleared when the service restarts.
 TOKENS = {}
@@ -182,6 +182,7 @@ async def connect(request: Request):
     params = {"client_id":CLIENT_ID,"redirect_uri":REDIRECT_URI,"scope":"trading","product":"web","state":state}
     return RedirectResponse("https://id.ctrader.com/my/settings/openapi/grantingaccess/?"+urlencode(params),status_code=303)
 
+@app.get("/auth/callback")
 @app.get("/oauth/callback")
 async def oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     expected = request.session.pop("oauth_state", None)
