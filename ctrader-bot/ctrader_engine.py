@@ -36,6 +36,10 @@ class CTraderDemoBridge:
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
             "risk_limits": {"max_positions": 15, "min_free_margin": 25.0},
+            "auto_started_at": None, "auto_deadline": None,
+            "last_auto_started_at": None, "last_auto_stopped_at": None,
+            "last_auto_stop_reason": None,
+            "last_manual_order_at": None, "last_manual_order_result_at": None,
         }
         self._thread = None
         self._auto_enabled = False
@@ -616,7 +620,9 @@ class CTraderDemoBridge:
             raise ValueError("Lado deve ser BUY ou SELL")
         if not isinstance(volume_units, int) or volume_units < 1 or volume_units > 1000:
             raise ValueError("Volume permitido nesta etapa: 1 a 1000 unidades")
+        import time
         with self._lock:
+            self._state["last_manual_order_at"] = time.time()
             state = dict(self._state)
             client = self._client
             symbol_id = state["symbol_ids"].get(symbol)
