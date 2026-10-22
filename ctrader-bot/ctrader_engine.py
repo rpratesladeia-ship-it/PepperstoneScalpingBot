@@ -796,6 +796,18 @@ class CTraderDemoBridge:
         account = next((a for a in state["accounts"] if a["account_id"] == state["selected_account_id"]), None)
         if not account or account["is_live"]:
             raise PermissionError("Somente conta DEMO permitida")
+        risk_decision = self._risk_guard.check(
+            demo_account=bool(account and not account.get("is_live", True)),
+            account_match=bool(state.get("selected_account_id") == account.get("account_id")),
+            connected=bool(state.get("connected") and state.get("application_authorized") and state.get("account_authorized")),
+            quote_fresh=bool(state.get("prices", {}).get(symbol)),
+            open_positions=len(self._tracked_positions),
+            equity=state.get("equity"),
+            free_margin=state.get("free_margin"),
+        )
+        if not risk_decision.allowed:
+            self._record_event("risk_block", symbol=symbol, reason=risk_decision.reason)
+            raise RuntimeError("Entrada bloqueada pelo controle de risco: " + risk_decision.reason)
         if len(self._tracked_positions) >= int(state.get("risk_limits", {}).get("max_positions", 3)):
             raise RuntimeError("Limite global de 3 posições DEMO atingido")
         if not symbol_id:
