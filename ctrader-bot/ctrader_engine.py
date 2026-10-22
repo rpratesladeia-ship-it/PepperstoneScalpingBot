@@ -81,29 +81,48 @@ class CTraderDemoBridge:
         # XAUUSD usa alvo mais amplo (swing intraday); demais ativos mantêm perfil scalping.
         # Distâncias em preço, não em dólares de P&L: validar especificações de cada símbolo.
         # Em todos os perfis o SL configurado é 40% da distância do TP.
+        # Universo DEMO por classe. Os nomes são candidatos; só os símbolos
+        # realmente publicados pela corretora cTrader serão encontrados/assinados.
+        # Distâncias em preço, não em dinheiro; SL = 40% do TP configurado.
         self._protection_distances = {
+            # Metais e energia
             "XAUUSD": (4.0, 10.0), "XAGUSD": (0.06, 0.15),
+            "XPTUSD": (4.0, 10.0), "XPDUSD": (4.0, 10.0),
+            "USOIL": (0.08, 0.20), "UKOIL": (0.08, 0.20), "NATGAS": (0.02, 0.05),
+            # Forex majors
             "EURUSD": (0.0006, 0.0015), "GBPUSD": (0.0006, 0.0015),
             "USDJPY": (0.06, 0.15), "USDCHF": (0.0006, 0.0015),
             "USDCAD": (0.0006, 0.0015), "AUDUSD": (0.0006, 0.0015),
-            "NZDUSD": (0.0006, 0.0015), "EURGBP": (0.0006, 0.0015),
-            "EURJPY": (0.06, 0.15), "GBPJPY": (0.06, 0.15),
-            "AUDJPY": (0.06, 0.15), "EURAUD": (0.0008, 0.0020),
-            "AUDCAD": (0.0006, 0.0015), "AUDCHF": (0.0006, 0.0015),
-            "AUDNZD": (0.0006, 0.0015), "CADCHF": (0.0006, 0.0015),
-            "CADJPY": (0.06, 0.15), "CHFJPY": (0.06, 0.15),
-            "EURNZD": (0.0008, 0.0020), "EURCAD": (0.0008, 0.0020),
-            "GBPAUD": (0.0008, 0.0020), "GBPCAD": (0.0008, 0.0020),
-            "GBPCHF": (0.0008, 0.0020), "GBPNZD": (0.0008, 0.0020),
-            "NZDCAD": (0.0006, 0.0015), "NZDCHF": (0.0006, 0.0015),
-            "NZDJPY": (0.06, 0.15), "EURCHF": (0.0006, 0.0015),
+            "NZDUSD": (0.0006, 0.0015),
+            # Forex crosses
+            "EURGBP": (0.0006, 0.0015), "EURJPY": (0.06, 0.15),
+            "GBPJPY": (0.06, 0.15), "AUDJPY": (0.06, 0.15),
+            "EURAUD": (0.0008, 0.0020), "AUDCAD": (0.0006, 0.0015),
+            "AUDCHF": (0.0006, 0.0015), "AUDNZD": (0.0006, 0.0015),
+            "CADCHF": (0.0006, 0.0015), "CADJPY": (0.06, 0.15),
+            "CHFJPY": (0.06, 0.15), "EURNZD": (0.0008, 0.0020),
+            "EURCAD": (0.0008, 0.0020), "GBPAUD": (0.0008, 0.0020),
+            "GBPCAD": (0.0008, 0.0020), "GBPCHF": (0.0008, 0.0020),
+            "GBPNZD": (0.0008, 0.0020), "NZDCAD": (0.0006, 0.0015),
+            "NZDCHF": (0.0006, 0.0015), "NZDJPY": (0.06, 0.15),
+            "EURCHF": (0.0006, 0.0015),
+            # Índices de bolsas
             "US30": (6.0, 15.0), "NAS100": (10.0, 25.0),
             "SPX500": (3.2, 8.0), "GER40": (10.0, 25.0),
             "UK100": (6.0, 15.0), "JPN225": (32.0, 80.0),
+            "AUS200": (10.0, 25.0), "FRA40": (10.0, 25.0),
+            "EU50": (10.0, 25.0), "HK50": (20.0, 50.0),
+            # Criptomoedas
             "BTCUSD": (60.0, 150.0), "ETHUSD": (6.0, 15.0),
             "LTCUSD": (3.2, 8.0), "BCHUSD": (6.0, 15.0),
             "ADAUSD": (0.012, 0.03), "DOTUSD": (0.08, 0.20),
             "SOLUSD": (0.8, 2.0), "XRPUSD": (0.004, 0.01),
+            "LINKUSD": (0.2, 0.5), "AVAXUSD": (0.4, 1.0),
+            "DOGEUSD": (0.002, 0.005),
+            # Ações/CFDs de ações — disponibilidade depende do broker/conta
+            "AAPL": (0.4, 1.0), "MSFT": (0.4, 1.0), "NVDA": (0.8, 2.0),
+            "TSLA": (1.0, 2.5), "AMZN": (0.6, 1.5), "GOOGL": (0.6, 1.5),
+            "META": (0.8, 2.0), "NFLX": (1.0, 2.5),
         }
         self._state["configured_auto_symbols"] = sorted(self._protection_distances)
         self._state["symbol_digits"] = {}
