@@ -166,6 +166,22 @@ class CTraderDemoBridge:
         with self._lock:
             return dict(self._state)
 
+    def close_connection(self):
+        """Stop this bridge cleanly before replacing a cTrader session."""
+        with self._lock:
+            client = self._client
+            self._client = None
+            self._token = None
+            self._auto_enabled = False
+            self._state.update(connected=False, application_authorized=False,
+                               account_authorized=False, auto_trading=False,
+                               auto_status="Conexão encerrada para reinicialização")
+        if client is not None:
+            try:
+                client.stopService()
+            except Exception as exc:
+                log.info("cTrader client cleanup finished (%s)", type(exc).__name__)
+
     def connect(self, access_token: str):
         if not access_token:
             raise ValueError("Token cTrader ausente")
@@ -183,6 +199,13 @@ class CTraderDemoBridge:
         return {"queued": True, "demo_only": True}
 
     def _start_client(self):
+        # Do not leave two TCP clients alive for one browser session.
+        existing = self._client
+        if existing is not None:
+            try:
+                existing.stopService()
+            except Exception:
+                pass
         client = Client(EndPoints.PROTOBUF_DEMO_HOST, EndPoints.PROTOBUF_PORT, TcpProtocol)
         self._client = client
         client.setConnectedCallback(self._on_connected)
