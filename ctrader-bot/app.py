@@ -50,7 +50,13 @@ async function refresh(){
   $('execution').textContent=b.auto_trading?'AUTOMÁTICA DEMO ATIVA':(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');
   const ai=b.ai_filter||{};
-  $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'ATIVO — filtro técnico experimental; modelo ML ainda não treinado'):'desligado');
+  $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'BLOQUEIO DE SEGURANÇA — modelo ML treinado ainda não instalado; entradas automáticas não podem iniciar'):'desligado');
+  const autoButton=$('autoToggle');
+  const autoBlocked=!!(ai.enabled && !ai.model_loaded && !b.auto_trading);
+  autoButton.disabled=autoBlocked;
+  autoButton.style.opacity=autoBlocked?'0.55':'1';
+  autoButton.style.cursor=autoBlocked?'not-allowed':'pointer';
+  if(autoBlocked) autoButton.textContent='AUTOMAÇÃO BLOQUEADA — IA SEM MODELO TREINADO';
   try{const mr=await fetch('/api/market-ai',{cache:'no-store'});const md=await mr.json();$('marketAi').innerHTML=(md.results||[]).map(x=>'<div class="tile" style="margin:8px 0"><b>'+x.symbol+'</b> — Alta <b>'+x.up_pct+'%</b> / Baixa <b>'+x.down_pct+'%</b><br>'+x.signal+' · '+x.reason+'</div>').join('')||md.message||'Aguardando histórico…';}catch(_){$('marketAi').textContent='Análise indisponível no momento.'}
   $('autoToggle').textContent=b.auto_trading?'DESATIVAR ROBÔ AUTOMÁTICO':'ATIVAR ENTRADAS AUTOMÁTICAS DEMO';
   const clock=ts=>ts?new Date(ts*1000).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',hour12:false,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
@@ -81,7 +87,7 @@ async function refresh(){
   if(b.last_order)$('result').textContent='Última ordem: '+JSON.stringify(b.last_order);
  }catch(e){$('status').textContent='Não foi possível consultar o estado do servidor.'}
 }
-$('autoToggle').onclick=async()=>{const active=($('autoToggle').textContent||'').startsWith('DESATIVAR');const minutes=Math.floor(Number($('runMinutes').value)||60);if(!active&&(!Number.isFinite(minutes)||minutes<1||minutes>1440)){ $('result').textContent='Informe um tempo entre 1 e 1440 minutos.';return;}const r=await fetch('/api/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!active,duration_minutes:minutes})});const t=await r.text();$('result').textContent=t;setTimeout(refresh,500)};
+$('autoToggle').onclick=async()=>{if($('autoToggle').disabled){$('result').textContent='A automação está bloqueada por segurança: ainda não existe modelo ML treinado e validado. Nenhuma ordem automática será enviada.';return;}const active=($('autoToggle').textContent||'').startsWith('DESATIVAR');const minutes=Math.floor(Number($('runMinutes').value)||60);if(!active&&(!Number.isFinite(minutes)||minutes<1||minutes>1440)){ $('result').textContent='Informe um tempo entre 1 e 1440 minutos.';return;}const r=await fetch('/api/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!active,duration_minutes:minutes})});const t=await r.text();$('result').textContent=t;setTimeout(refresh,500)};
 $('account').addEventListener('change',()=>{try{if($('account').value)localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}});
 $('selectAccount').onclick=async()=>{if(!$('account').value){$('result').textContent='Nenhuma conta DEMO disponível ainda.';return}try{localStorage.setItem('meuTraderDemoAccountId',$('account').value)}catch(_){}const r=await fetch('/api/account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:Number($('account').value)})});$('result').textContent=await r.text();setTimeout(refresh,800)};
 document.querySelectorAll('.trade').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar ordem '+btn.dataset.side+' de '+$('volume').value+' unidade(s) em '+$('symbol').value+' na conta DEMO?'))return;const r=await fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value,side:btn.dataset.side,volume_units:Number($('volume').value)})});$('result').textContent=await r.text();setTimeout(refresh,1000)});
