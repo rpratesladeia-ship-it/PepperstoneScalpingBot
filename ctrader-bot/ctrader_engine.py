@@ -605,7 +605,10 @@ class CTraderDemoBridge:
                 self._state["auto_status"] = "Entrada bloqueada: conta DEMO não autorizada"
                 return
             # One open position per symbol; other assets may operate concurrently.
-            if any(position.get("symbol") == symbol for position in self._tracked_positions.values()):
+            target_symbol_id = self._state.get("symbol_ids", {}).get(symbol)
+            if any(position.get("symbol") == symbol or
+                   (target_symbol_id and position.get("symbol_id") == target_symbol_id)
+                   for position in self._tracked_positions.values()):
                 self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
             free_margin = self._state.get("free_margin")
@@ -765,7 +768,10 @@ class CTraderDemoBridge:
         if not state["prices"].get(symbol):
             raise RuntimeError("Aguardando cotação do ativo")
         # Do not impose a global position cap; enforce one open position per symbol.
-        if any(position.get("symbol") == symbol for position in self._tracked_positions.values()):
+        target_symbol_id = state["symbol_ids"].get(symbol)
+        if any(position.get("symbol") == symbol or
+               (target_symbol_id and position.get("symbol_id") == target_symbol_id)
+               for position in self._tracked_positions.values()):
             raise RuntimeError("Já existe uma posição aberta neste ativo; uma posição por ativo é permitida.")
         free_margin = state.get("free_margin")
         min_free_margin = float(state.get("risk_limits", {}).get("min_free_margin", 25.0))
