@@ -222,6 +222,17 @@ async def toggle_auto_trading(request: Request, toggle: AutoTradingToggle):
         return HTMLResponse(str(exc), status_code=400)
 
 
+@app.get("/api/market-log")
+async def market_event_log(request: Request, limit: int = 200):
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if not bridge:
+        return HTMLResponse("Conecte a conta cTrader primeiro.", status_code=401)
+    events = bridge.read_recent_events(limit)
+    return {"count": len(events), "events": events,
+            "note": "Log estruturado para análise; no Render, o arquivo local pode ser apagado em reinicializações ou novos deploys."}
+
+
 @app.post("/api/order")
 async def place_demo_order(request: Request, order: DemoOrder):
     sid = request.session.get("sid")
