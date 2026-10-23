@@ -44,7 +44,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": None, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
+            "risk_limits": {"max_positions": 3, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -94,6 +94,9 @@ class CTraderDemoBridge:
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
         self._tracked_positions = {}
+        # Prevent repeated asynchronous quote events from queuing duplicate orders
+        # before cTrader reconciles the first order into the open-position list.
+        self._auto_pending_symbols = set()
         self._trail_peak_by_position = {}
         self._trail_closing_positions = set()
         self._pnl_poll_scheduled = False
@@ -604,14 +607,22 @@ class CTraderDemoBridge:
             if not self._state["account_authorized"]:
                 self._state["auto_status"] = "Entrada bloqueada: conta DEMO não autorizada"
                 return
-            # One open position per symbol; other assets may operate concurrently.
+            # One open OR pending position per symbol. Orders are asynchronous, so
+            # tracked positions alone are insufficient until cTrader reconciles.
             target_symbol_id = self._state.get("symbol_ids", {}).get(symbol)
+            if symbol in self._auto_pending_symbols:
+                self._state["auto_status"] = "Entrada bloqueada: ordem de " + symbol + " ainda está em processamento"
+                return
             if any(position.get("symbol") == symbol or
                    (target_symbol_id and position.get("symbol_id") == target_symbol_id)
                    for position in self._tracked_positions.values()):
                 self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
-            # Sem limite global de posições: os bloqueios por ativo, margem e perdas permanecem ativos.
+            # Keep a small global cap during validation to avoid uncontrolled exposure.
+            max_positions = self._state.get("risk_limits", {}).get("max_positions", 3)
+            if max_positions is not None and len(self._tracked_positions) >= int(max_positions):
+                self._state["auto_status"] = "Entrada bloqueada: limite de posições DEMO atingido"
+                return
             free_margin = self._state.get("free_margin")
             if free_margin is not None and free_margin < self._state["risk_limits"]["min_free_margin"]:
                 self._state["auto_status"] = "Entrada bloqueada: margem livre abaixo do mínimo de segurança"
@@ -694,6 +705,7 @@ class CTraderDemoBridge:
                     )
                     return
             self._auto_last_trade_at[symbol] = now
+            self._auto_pending_symbols.add(symbol)
             self._state["last_signal"]["decision"] = "approved_for_order"
             self._state["auto_status"] = "Sinal " + side + " confirmado pelos filtros em " + symbol + "; enviando ordem demo"
         try:
@@ -854,6 +866,8 @@ class CTraderDemoBridge:
                 "order_id": int(order.orderId) if order else None,
                 "status": "resposta recebida",
             }
+        with self._lock:
+            self._auto_pending_symbols.discard(symbol)
         self._record_event("order_response", symbol=symbol, side=side, volume_units=volume_units,
             accepted=message.payloadType == ProtoOAExecutionEvent().payloadType,
             order_id=int(order.orderId) if order else None)
