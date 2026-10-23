@@ -52,7 +52,7 @@ async function refresh(){
   $('execution').textContent=b.auto_trading?(b.auto_observe_only?'MONITORAMENTO DEMO ATIVO — SEM ORDENS':(b.ai_filter?.enabled&&!b.ai_filter?.model_loaded?'AUTOMÁTICA DEMO EXPERIMENTAL ATIVA':'AUTOMÁTICA DEMO ATIVA')):(b.account_authorized?'TESTE MANUAL DEMO':'BLOQUEADA');
   $('autoStatus').textContent=b.auto_status|| (b.auto_trading?'Automação ativa':'Automação desligada');
   const ai=b.ai_filter||{};
-  $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'BLOQUEIO DE SEGURANÇA — modelo ML treinado ainda não instalado; entradas automáticas não podem iniciar'):'desligado');
+  $('aiStatus').textContent='Filtro IA: '+(ai.enabled?(ai.model_loaded?'ATIVO — modelo ML treinado':'MODO EXPERIMENTAL DEMO — modelo ML treinado ausente; sinais técnicos podem ser testados, sem alegar IA treinada'):'desligado');
   const autoButton=$('autoToggle');
   const mainButton=$('connectBtn');
   const experimentalDemo=!!(ai.enabled && !ai.model_loaded);
@@ -69,7 +69,7 @@ async function refresh(){
       mainButton.onclick=startDemoFromSingleButton;
     }
   }
-  if(experimentalDemo && !b.auto_trading) $('autoStatus').textContent='Modelo ML treinado ausente. O início permanece sujeito à política DEMO, limites de risco e validação do ciclo de ordens.';
+  if(experimentalDemo && !b.auto_trading) $('autoStatus').textContent='Modo experimental DEMO: modelo ML ausente; robô pode testar sinais técnicos após validar conta, cotação e margem disponível.';
   try{const mr=await fetch('/api/market-ai',{cache:'no-store'});const md=await mr.json();$('marketAi').innerHTML=(md.results||[]).map(x=>'<div class="tile" style="margin:8px 0"><b>'+x.symbol+'</b> — Alta <b>'+x.up_pct+'%</b> / Baixa <b>'+x.down_pct+'%</b><br>'+x.signal+' · '+x.reason+'</div>').join('')||md.message||'Aguardando histórico…';}catch(_){$('marketAi').textContent='Análise indisponível no momento.'}
   const clock=ts=>ts?new Date(ts*1000).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',hour12:false,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—';
   if(b.auto_trading && b.auto_deadline){
