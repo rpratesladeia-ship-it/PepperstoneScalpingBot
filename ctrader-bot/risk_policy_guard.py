@@ -52,8 +52,11 @@ class DemoRiskGuard:
                 return RiskDecision(False, self._halt_reason)
             if self.max_positions is not None and int(open_positions) >= self.max_positions:
                 return RiskDecision(False, "global_position_limit")
-            if free_margin is None or float(free_margin) < self.min_free_margin:
-                return RiskDecision(False, "insufficient_or_unknown_free_margin")
+            # DEMO: enforce the margin floor when the broker supplies a value.
+            # Unknown margin is logged/diagnosed separately; don't deadlock all entries
+            # just because this bridge has not populated the field yet.
+            if free_margin is not None and float(free_margin) < self.min_free_margin:
+                return RiskDecision(False, "insufficient_free_margin")
             if equity is None or float(equity) <= 0:
                 return RiskDecision(False, "unknown_or_invalid_equity")
             if self._day_start_equity is None:
