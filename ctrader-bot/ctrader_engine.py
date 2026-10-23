@@ -80,7 +80,8 @@ class CTraderDemoBridge:
         self._auto_enabled = False
         self._auto_last_signal = {}
         self._auto_history = {}
-        self._auto_cooldown_seconds = 0
+        # Cooldown real para evitar reentradas imediatas no mesmo ativo.
+        self._auto_cooldown_seconds = 300
         self._auto_last_trade_at = {}
         # Rotation guard: max 3 consecutive successful entries per symbol, then 5 other-symbol entries before reuse.
         self._auto_last_entry_symbol = None
@@ -88,8 +89,9 @@ class CTraderDemoBridge:
         self._auto_rotation_wait = {}
         self._auto_rotation_other_entries = {}
         self._auto_max_consecutive_per_symbol = 1
-        self._auto_other_entries_before_reuse = 0
-        self._auto_max_positions = 1000
+        # Após uma entrada, exigir cinco entradas em outros ativos antes de reutilizar.
+        self._auto_other_entries_before_reuse = 5
+        self._auto_max_positions = 3
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -619,8 +621,9 @@ class CTraderDemoBridge:
                 self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
             # Keep a small global cap during validation to avoid uncontrolled exposure.
-            max_positions = self._state.get("risk_limits", {}).get("max_positions", 3)
-            if max_positions is not None and len(self._tracked_positions) >= int(max_positions):
+            configured_cap = self._state.get("risk_limits", {}).get("max_positions", 3)
+            max_positions = min(int(configured_cap), int(self._auto_max_positions)) if configured_cap is not None else int(self._auto_max_positions)
+            if max_positions > 0 and len(self._tracked_positions) + len(self._auto_pending_symbols) >= max_positions:
                 self._state["auto_status"] = "Entrada bloqueada: limite de posições DEMO atingido"
                 return
             free_margin = self._state.get("free_margin")
@@ -735,9 +738,11 @@ class CTraderDemoBridge:
         except Exception as exc:
             self._record_event("entry_error", symbol=symbol, side=side, error=str(exc)[:300])
             with self._lock:
+                self._auto_pending_symbols.discard(symbol)
                 if self._state.get("last_signal"):
                     self._state["last_signal"]["decision"] = "order_error"
                     self._state["last_signal"]["reason"] = str(exc)[:300]
+                self._state["auto_status"] = "Entrada bloqueada/erro em " + symbol + ": " + str(exc)[:180]
                 self._state["auto_status"] = "Entrada bloqueada: " + str(exc)[:140]
             log.warning("Automatic demo entry blocked for %s: %s", symbol, type(exc).__name__)
 
