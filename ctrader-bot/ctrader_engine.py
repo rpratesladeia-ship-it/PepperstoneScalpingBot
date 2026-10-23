@@ -44,7 +44,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 15, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
+            "risk_limits": {"max_positions": None, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -91,7 +91,8 @@ class CTraderDemoBridge:
         self._auto_max_consecutive_per_symbol = 1
         # Após uma entrada, exigir cinco entradas em outros ativos antes de reutilizar.
         self._auto_other_entries_before_reuse = 5
-        self._auto_max_positions = 3
+        # Sem teto global de posições; bloqueio por ativo duplicado permanece ativo.
+        self._auto_max_positions = None
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
         self._profit_retrace_usd = 0.05
@@ -621,11 +622,8 @@ class CTraderDemoBridge:
                 self._state["auto_status"] = "Entrada bloqueada: já existe posição aberta em " + symbol
                 return
             # Keep a small global cap during validation to avoid uncontrolled exposure.
-            configured_cap = self._state.get("risk_limits", {}).get("max_positions", 3)
-            max_positions = min(int(configured_cap), int(self._auto_max_positions)) if configured_cap is not None else int(self._auto_max_positions)
-            if max_positions > 0 and len(self._tracked_positions) + len(self._auto_pending_symbols) >= max_positions:
-                self._state["auto_status"] = "Entrada bloqueada: limite de posições DEMO atingido"
-                return
+            # Não aplicar teto global de posições. Bloqueios por símbolo, ordens pendentes,
+            # autorização DEMO e margem mínima continuam obrigatórios.
             free_margin = self._state.get("free_margin")
             if free_margin is not None and free_margin < self._state["risk_limits"]["min_free_margin"]:
                 self._state["auto_status"] = "Entrada bloqueada: margem livre abaixo do mínimo de segurança"
