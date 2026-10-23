@@ -44,7 +44,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": 3, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
+            "risk_limits": {"max_positions": 15, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
