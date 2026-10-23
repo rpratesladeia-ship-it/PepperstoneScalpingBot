@@ -492,59 +492,30 @@ class CTraderDemoBridge:
         return peak_profit >= activation and (peak_profit - current_profit) >= retrace
 
     def _handle_position_pnl(self, payload):
+        """Observe account PnL only; never close positions automatically.
+
+        cTrader reconciliation includes both manually opened positions and positions
+        created by this bot. Until order-to-position ownership is reliably mapped,
+        a global trailing closer could close the operator's manual trades. Keep this
+        method diagnostic-only; bot entries already request server-side SL/TP.
+        """
         money_digits = int(getattr(payload, "moneyDigits", 2))
         divisor = float(10 ** money_digits)
         for item in getattr(payload, "positionUnrealizedPnL", []):
             position_id = int(getattr(item, "positionId", 0))
             current_profit = float(getattr(item, "netUnrealizedPnL", 0)) / divisor
-            self._record_event("position_pnl", position_id=position_id, net_unrealized_pnl=current_profit)
+            self._record_event("position_pnl", position_id=position_id,
+                net_unrealized_pnl=current_profit, action="observe_only")
             with self._lock:
-                if position_id not in self._tracked_positions or position_id in self._trail_closing_positions:
+                if position_id not in self._tracked_positions:
                     continue
-                peak = max(self._trail_peak_by_position.get(position_id, current_profit), current_profit)
-                self._trail_peak_by_position[position_id] = peak
-                armed = peak >= self._profit_arm_usd
                 self._state["profit_trailing"] = {
-                    "enabled": True, "activation_usd": self._profit_arm_usd, "retrace_usd": self._profit_retrace_usd,
+                    "enabled": False,
+                    "reason": "Fechamento automático desativado para proteger operações manuais",
                     "positions": len(self._tracked_positions),
-                    "armed_positions": sum(1 for p in self._trail_peak_by_position.values() if p >= self._profit_arm_usd),
-                    "last_position_id": position_id, "last_profit_usd": round(current_profit, 4),
-                    "peak_profit_usd": round(peak, 4), "armed": armed,
+                    "last_position_id": position_id,
+                    "last_profit_usd": round(current_profit, 4),
                 }
-                should_close = self._trail_should_close(peak, current_profit, self._profit_arm_usd, self._profit_retrace_usd)
-                if should_close:
-                    self._trail_closing_positions.add(position_id)
-                    volume = self._tracked_positions[position_id]["volume"]
-                    account_id = self._state.get("selected_account_id")
-                    client = self._client
-                    self._state["auto_status"] = "Trailing financeiro: solicitando fechamento DEMO da posição " + str(position_id)
-            if should_close:
-                if not client or not account_id or not volume:
-                    with self._lock:
-                        self._trail_closing_positions.discard(position_id)
-                        self._state["last_error"] = "Trailing acionado, mas não foi possível confirmar volume/conta para fechar."
-                    continue
-                req = ProtoOAClosePositionReq()
-                req.ctidTraderAccountId = int(account_id)
-                req.positionId = int(position_id)
-                req.volume = int(volume)
-                def record_close_response(message, pid=position_id, peak_value=peak, current_value=current_profit):
-                    with self._lock:
-                        self._state["last_order"] = {
-                            "accepted": message.payloadType == ProtoOAExecutionEvent().payloadType,
-                            "action": "trailing_close", "position_id": pid,
-                            "peak_profit_usd": round(peak_value, 4), "profit_at_request_usd": round(current_value, 4),
-                            "status": "resposta de fechamento recebida",
-                        }
-                        self._trail_closing_positions.discard(pid)
-                    return message
-                def close_failed(failure, pid=position_id):
-                    with self._lock:
-                        self._trail_closing_positions.discard(pid)
-                        self._state["last_error"] = "Falha ao solicitar fechamento pelo trailing financeiro."
-                    return self._on_error(failure)
-                client.send(req).addCallbacks(record_close_response, close_failed)
-                log.info("Financial trailing requested DEMO close position=%s peak=%.4f current=%.4f", position_id, peak, current_profit)
 
     def set_auto_trading(self, enabled: bool, duration_minutes: int = 10080):
         """Enable guarded DEMO entries with an automatic stop timer."""
