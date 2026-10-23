@@ -851,10 +851,22 @@ class CTraderDemoBridge:
         def send():
             client.send(req).addCallbacks(
                 lambda msg: self._record_order_response(msg, symbol, side, volume_units),
-                self._on_error,
+                lambda failure: self._record_order_error(failure, symbol, side),
             )
         reactor.callFromThread(send)
         return {"queued": True, "demo_only": True, "symbol": symbol, "side": side, "volume_units": volume_units}
+
+    def _record_order_error(self, failure, symbol, side):
+        with self._lock:
+            self._auto_pending_symbols.discard(symbol)
+            self._state["last_order"] = {
+                "accepted": False, "symbol": symbol, "side": side,
+                "status": "falha ao enviar ordem DEMO",
+            }
+        self._record_event("order_error", symbol=symbol, side=side,
+            error=str(getattr(failure, "value", failure)))
+        self._on_error(failure)
+        return failure
 
     def _record_order_response(self, message, symbol, side, volume_units):
         payload = Protobuf.extract(message)
