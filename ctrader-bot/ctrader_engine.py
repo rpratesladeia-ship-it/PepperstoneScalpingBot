@@ -44,7 +44,7 @@ class CTraderDemoBridge:
             "symbols": [], "symbol_ids": {}, "prices": {}, "equity": None,
             "balance": None, "equity": None, "margin": None, "free_margin": None,
             "open_positions": 0, "order_execution": False, "last_order": None,
-            "risk_limits": {"max_positions": None, "min_free_margin": 25.0, "max_daily_loss_pct": 2.0, "max_operations_day": 10},
+            "risk_limits": {"max_positions": None, "min_free_margin": 25.0, "max_daily_loss_pct": None, "max_operations_day": None},
             "auto_started_at": None, "auto_deadline": None, "auto_observe_only": False,
             "last_auto_started_at": None, "last_auto_stopped_at": None,
             "last_auto_stop_reason": None,
@@ -75,12 +75,12 @@ class CTraderDemoBridge:
             }
             log.error("AI strategy policy load/validation failed: %s", type(exc).__name__)
 
-        self._risk_guard = DemoRiskGuard(max_positions=None, max_daily_loss_pct=2.0, max_operations_day=10, max_consecutive_losses=3, min_free_margin=25.0)
+        self._risk_guard = DemoRiskGuard(max_positions=None, max_daily_loss_pct=None, max_operations_day=None, max_consecutive_losses=None, min_free_margin=25.0)
         self._thread = None
         self._auto_enabled = False
         self._auto_last_signal = {}
         self._auto_history = {}
-        self._auto_cooldown_seconds = int(self._strategy_spec.get('risk', {}).get('cooldown_seconds_per_symbol', 300))
+        self._auto_cooldown_seconds = 0
         self._auto_last_trade_at = {}
         # Rotation guard: max 3 consecutive successful entries per symbol, then 5 other-symbol entries before reuse.
         self._auto_last_entry_symbol = None
@@ -88,7 +88,7 @@ class CTraderDemoBridge:
         self._auto_rotation_wait = {}
         self._auto_rotation_other_entries = {}
         self._auto_max_consecutive_per_symbol = 1
-        self._auto_other_entries_before_reuse = int(self._strategy_spec.get('risk', {}).get('other_successful_entries_before_symbol_reuse', 5))
+        self._auto_other_entries_before_reuse = 0
         self._auto_max_positions = 1000
         # Financial trailing protection per open position, account deposit currency.
         self._profit_arm_usd = 0.20
