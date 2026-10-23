@@ -681,19 +681,20 @@ class CTraderDemoBridge:
                     "symbol": symbol, "side": side, "price_raw": prices[-1],
                     "dms": dms, "timestamp": now, "decision": "checking_filters"
                 }
-            if not dms or dms["direction"] != side or dms["adx"] < self._dms_min_strength:
-                reason = "DMS direction/strength filter"
+            # DEMO experiment: DMS is diagnostic only, not a hard entry veto.
+            # The crossover remains the entry trigger; keep the DMS values in the audit
+            # trail so results can be evaluated without silently dropping every setup.
+            if not dms:
+                reason = "DMS data unavailable"
                 with self._lock:
-                    self._state["last_signal"]["decision"] = "blocked_by_dms"
+                    self._state["last_signal"]["decision"] = "blocked_missing_dms"
                     self._state["last_signal"]["reason"] = reason
                 self._record_event("signal_rejected", symbol=symbol, side=side, reason=reason, dms=dms)
-                self._state["auto_status"] = (
-                    "Entrada " + side + " bloqueada pelo DMS 14 em " + symbol
-                    + " (DI+ " + str(dms["di_plus"] if dms else "—")
-                    + " / DI− " + str(dms["di_minus"] if dms else "—")
-                    + " / força " + str(dms["adx"] if dms else "—") + ")"
-                )
+                self._state["auto_status"] = "Entrada bloqueada: dados DMS insuficientes em " + symbol
                 return
+            self._record_event("dms_advisory", symbol=symbol, side=side,
+                dms_direction=dms["direction"], dms_strength=dms["adx"],
+                aligned=(dms["direction"] == side), meets_threshold=(dms["adx"] >= self._dms_min_strength))
             if self._ai_enabled:
                 if self._ai_model is None:
                     # Explicitly experimental DEMO execution: technical crossover + DMS,
