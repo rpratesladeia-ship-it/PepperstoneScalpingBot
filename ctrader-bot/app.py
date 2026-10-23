@@ -2,7 +2,7 @@ import os, secrets, logging, socket, time
 from urllib.parse import urlencode
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from ctrader_engine import CTraderDemoBridge
@@ -37,12 +37,13 @@ small{color:#a9b6c8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.t
 <button class="btn" id="connectBtn" style="width:100%;border:0;cursor:pointer;font-size:1rem">INICIAR ROBÔ DEMO</button>
 <p class="muted"><small>Um único botão conecta, confirma a conta DEMO selecionada e inicia o robô. A autorização oficial do cTrader pode exigir confirmação na página segura da corretora.</small></p>
 <p class="muted"><small>* Os ativos dependem da corretora e da conta conectada. Cripto pode não estar disponível em todos os brokers cTrader.</small></p></div>
-<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><div id="accountWrap" style="display:none"><label for="account">Conta DEMO selecionada</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button></div><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><h3>IA de mercado — análise experimental</h3><p class="muted">Estimativas técnicas de curto prazo baseadas em ticks reais recebidos. Não é modelo ML treinado nem garantia de resultado.</p><div id="marketAi" class="muted">Aguardando histórico de cotações…</div><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="10080" step="1" value="10080" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><div class="tile" style="margin:8px 0"><b>Registro de horários (Brasília)</b><p class="muted" id="autoTimes">Início automático: —<br>Parada automática: —</p><p class="muted" id="manualTimes">Última ordem manual: —</p></div><button id="autoToggle" style="display:none">INICIAR ROBÔ DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
+<div class="card"><h2>Estado da conexão</h2><p class="muted" id="status">__STATUS__</p><p class="muted" id="accountInfo">Consultando a API cTrader…</p><div id="accountWrap" style="display:none"><label for="account">Conta DEMO selecionada</label><select id="account" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"></select><button id="selectAccount" style="padding:12px;width:100%;border:0;border-radius:10px;font-weight:700">Validar conta DEMO selecionada</button></div><h3>Cotações recebidas</h3><div id="quotes" class="muted">Aguardando cotações…</div><h3>Robô automático (somente DEMO)</h3><p id="autoStatus" class="muted">Automação desligada</p><p id="aiStatus" class="muted">Filtro IA: consultando estado…</p><h3>Análise com ChatGPT</h3><p class="muted">O ChatGPT analisa as cotações recentes recebidas pela cTrader, momentum e cruzamento de médias. É uma segunda opinião: não envia nem fecha ordens.</p><button id="chatgptAnalyze" class="btn" style="width:100%;border:0;cursor:pointer">ANALISAR MERCADO COM CHATGPT</button><p id="chatgptStatus" class="muted">Requer OPENAI_API_KEY configurada nas variáveis do Render.</p><div id="chatgptResult" class="tile" style="white-space:pre-wrap">Aguardando análise solicitada.</div><h3>IA de mercado — pontuação técnica experimental</h3><p class="muted">Estimativas matemáticas locais; não é modelo ML treinado nem garantia de resultado.</p><div id="marketAi" class="muted">Aguardando histórico de cotações…</div><label for="runMinutes">Tempo de funcionamento (minutos)</label><input id="runMinutes" type="number" min="1" max="10080" step="1" value="10080" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><p id="autoTimer" class="muted">Temporizador parado</p><div class="tile" style="margin:8px 0"><b>Registro de horários (Brasília)</b><p class="muted" id="autoTimes">Início automático: —<br>Parada automática: —</p><p class="muted" id="manualTimes">Última ordem manual: —</p></div><button id="autoToggle" style="display:none">INICIAR ROBÔ DEMO</button><p class="muted"><small>Estratégia inicial: cruzamento de médias rápidas/lentas nos ticks. Volume mínimo de 1 unidade, intervalo de segurança de 5 minutos por ativo. Faça testes em DEMO; isso não garante lucro e não substitui stop-loss.</small></p><h3>Teste manual (somente DEMO)</h3><label>Ativo</label><select id="symbol" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px"><option>XAUUSD</option><option>EURUSD</option><option>GBPUSD</option><option>USDJPY</option><option>BTCUSD</option><option>US30</option></select><label>Volume em unidades</label><input id="volume" type="number" min="1" max="1000" value="1" style="width:100%;padding:12px;margin:8px 0;background:#111925;color:#fff;border-radius:10px;color:#fff"><div class="grid"><button class="trade" data-side="BUY" style="padding:14px;border:0;border-radius:10px;background:#75e0b0;font-weight:700">Comprar DEMO</button><button class="trade" data-side="SELL" style="padding:14px;border:0;border-radius:10px;background:#f5a3a3;font-weight:700">Vender DEMO</button></div><p id="result" class="muted"></p><p class="muted"><small>Uma ordem só será enviada após você tocar no botão e confirmar. Não é execução automática ainda.</small></p></div>
 <div class="card"><h2>Política operacional da IA</h2><p id="policyStatus" class="muted">Verificando política salva no programa…</p><ul class="muted"><li>Conta DEMO; conta REAL bloqueada.</li><li>Uma posição aberta por ativo e cinco entradas bem-sucedidas em outros ativos antes de reutilizar o ativo.</li><li>Arbitragem estatística, PPO e NLP ficam desativados até validação fora da amostra.</li><li>Z-Score isolado não autoriza ordem; considerar custos, spread, slippage e qualidade dos dados.</li><li>Margem, SL/TP, estado da conexão e frescor das cotações devem ser verificados.</li></ul><p><a href="https://github.com/rpratesladeia-ship-it/PepperstoneScalpingBot/blob/ctrader-multimarket-demo/ctrader-bot/AI_TRADING_POLICY.md" target="_blank" rel="noopener">Abrir especificação completa da IA</a></p></div>
 <div class="card"><h2>Calendário econômico e notícias oficiais</h2><p class="muted">Contexto para planejar as sessões; manchetes não são sinais de compra/venda. Horários oficiais devem ser conferidos na fonte.</p><p id="contextStatus" class="muted">Carregando fontes oficiais…</p><div id="contextNews" class="muted">Aguardando atualização…</div><p class="muted"><a href="https://www.federalreserve.gov/newsevents/calendar.htm" target="_blank" rel="noopener">Calendário do Federal Reserve (FOMC)</a><br><a href="https://www.bls.gov/schedule/2026/" target="_blank" rel="noopener">Calendário de indicadores dos EUA (BLS)</a><br><a href="https://www.bea.gov/news/schedule/" target="_blank" rel="noopener">Calendário econômico do BEA</a></p></div>
 <div class="card"><h2>Segurança</h2><p class="muted">Não compartilhe senhas, códigos de autenticação, client secret ou tokens. As credenciais do aplicativo ficam somente nas variáveis secretas do servidor.</p></div>
 </main><script>
 const $=id=>document.getElementById(id);
+$('chatgptAnalyze').onclick=async()=>{const btn=$('chatgptAnalyze');btn.disabled=true;btn.textContent='ANALISANDO…';$('chatgptStatus').textContent='Enviando snapshot de mercado ao ChatGPT…';$('chatgptResult').textContent='A análise pode levar alguns segundos.';try{const r=await fetch('/api/chatgpt-analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});const d=await r.json();if(!r.ok)throw new Error(d.detail||d.message||'Falha na análise');$('chatgptStatus').textContent='Análise concluída · '+(d.model||'modelo OpenAI')+' · somente consultiva';$('chatgptResult').textContent=d.analysis||'Sem texto de análise.';}catch(e){$('chatgptStatus').textContent='Análise não concluída';$('chatgptResult').textContent=String(e.message||e);}finally{btn.disabled=false;btn.textContent='ANALISAR MERCADO COM CHATGPT';}};
 async function refresh(){
  try{
   const r=await fetch('/api/status',{cache:'no-store'}); const d=await r.json(); const b=d.broker||{};
@@ -217,6 +218,104 @@ async def api_market_ai(request: Request):
                         "reason": "momentum, médias curtas e eficiência direcional", "samples": len(prices)})
     return {"mode": "pontuação técnica experimental; sem modelo treinado e sem análise de notícias", "results": results,
             "message": "Aguardando pelo menos 22 ticks por ativo configurado." if not results else None}
+
+
+@app.post("/api/chatgpt-analysis")
+async def api_chatgpt_analysis(request: Request):
+    """On-demand OpenAI market commentary; this endpoint never submits trading orders."""
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        return JSONResponse(
+            {"message": "OPENAI_API_KEY não configurada no Render. Adicione a variável secreta e faça novo deploy."},
+            status_code=503,
+        )
+    sid = request.session.get("sid")
+    bridge = BRIDGES.get(sid) if sid else None
+    if not bridge:
+        return JSONResponse({"message": "Conecte e autorize a conta DEMO para analisar cotações reais."}, status_code=409)
+
+    snapshot = []
+    with bridge._lock:
+        histories = dict(bridge._auto_history)
+        digits_by_symbol = dict(bridge._state.get("symbol_digits", {}))
+        symbol_ids = dict(bridge._state.get("symbol_ids", {}))
+        quotes = dict(bridge._state.get("prices", {}))
+        open_positions = int(bridge._state.get("open_positions", 0) or 0)
+        auto_enabled = bool(getattr(bridge, "_auto_enabled", False))
+        risk_limits = dict(bridge._state.get("risk_limits", {}))
+    for symbol, raw_history in histories.items():
+        values = [float(v) for v in raw_history if isinstance(v, (int, float)) and v > 0]
+        if len(values) < 22:
+            continue
+        digits = int(digits_by_symbol.get(symbol, 5))
+        divisor = 10 ** digits
+        price = values[-1] / divisor
+        fast = sum(values[-9:]) / 9 / divisor
+        slow = sum(values[-21:]) / 21 / divisor
+        mom3 = ((values[-1] / values[-4]) - 1) * 100 if values[-4] else 0
+        mom8 = ((values[-1] / values[-9]) - 1) * 100 if values[-9] else 0
+        snapshot.append({
+            "symbol": symbol, "price": round(price, digits),
+            "fast_ma_9": round(fast, digits), "slow_ma_21": round(slow, digits),
+            "momentum_3_ticks_pct": round(mom3, 5),
+            "momentum_8_ticks_pct": round(mom8, 5),
+            "samples": len(values), "symbol_available": symbol in symbol_ids,
+            "quote": quotes.get(symbol, {}),
+        })
+    if not snapshot:
+        return JSONResponse({"message": "Ainda não há 22 ticks por ativo. Aguarde novas cotações da cTrader."}, status_code=409)
+
+    snapshot.sort(key=lambda x: (abs(x["momentum_3_ticks_pct"]) + abs(x["momentum_8_ticks_pct"])), reverse=True)
+    snapshot = snapshot[:15]
+    model = (os.getenv("OPENAI_MODEL") or "gpt-6-luna").strip()
+    instructions = (
+        "Você é analista técnico de mercados e responde em português brasileiro. Analise apenas os dados fornecidos. "
+        "Não invente notícias, preços, candles ou indicadores. Dados são ticks, não candles OHLC; não os descreva como M15. "
+        "Explique tendência/momentum, divergências entre ativos e riscos de entradas tardias. "
+        "Dê uma tabela curta por ativo com viés (alta/baixa/neutro), confiança qualitativa (baixa/média/alta), "
+        "e o que precisaria ser confirmado antes de uma entrada. Se dados forem insuficientes, diga isso. "
+        "Não prometa lucro, não trate probabilidades como calibradas e não envie nem recomende execução automática. "
+        "A conta é DEMO; essa resposta é consultiva e nunca autoriza ordens."
+    )
+    user_data = {
+        "market_snapshot": snapshot,
+        "open_positions_count": open_positions,
+        "auto_trading_enabled": auto_enabled,
+        "risk_limits": risk_limits,
+        "note": "Prices/averages are computed from recent ticks; broker contract specs and spread may be incomplete.",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "instructions": instructions,
+                    "input": json.dumps(user_data, ensure_ascii=False),
+                    "max_output_tokens": 700,
+                },
+            )
+        if response.status_code >= 400:
+            log.warning("OpenAI market analysis failed with HTTP %s", response.status_code)
+            return JSONResponse({"message": "OpenAI recusou a análise (HTTP " + str(response.status_code) + "). Confira chave, saldo/créditos e nome do modelo nas variáveis do Render."}, status_code=502)
+        payload = response.json()
+        texts = []
+        for item in payload.get("output", []):
+            for content in item.get("content", []):
+                if content.get("type") == "output_text" and content.get("text"):
+                    texts.append(content["text"])
+        analysis = "\n".join(texts).strip()
+        if not analysis:
+            return JSONResponse({"message": "A API respondeu, mas não retornou texto de análise."}, status_code=502)
+        return {"ok": True, "model": payload.get("model", model), "analysis": analysis,
+                "market_symbols_analyzed": [item["symbol"] for item in snapshot],
+                "open_positions_count": open_positions, "orders_sent": False}
+    except httpx.TimeoutException:
+        return JSONResponse({"message": "A análise do ChatGPT excedeu o tempo limite. Tente novamente."}, status_code=504)
+    except (httpx.HTTPError, ValueError):
+        log.exception("OpenAI market analysis transport/parse failure")
+        return JSONResponse({"message": "Falha de comunicação com a API OpenAI. Consulte os logs do Render."}, status_code=502)
 
 
 @app.get("/diagnostico-ctrader")
