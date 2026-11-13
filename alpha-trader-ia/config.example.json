@@ -1,0 +1,21 @@
+{
+  "app_name": "ALPHA TRADER IA",
+  "version": "1.0.0",
+  "environment": "paper",
+  "live_trading_enabled": false,
+  "martingale_enabled": false,
+  "default_timeframes": ["1m", "5m", "15m"],
+  "reference_entry_brl": 5.0,
+  "max_open_positions": 1,
+  "max_daily_loss_brl": 10.0,
+  "max_trades_per_day": 10,
+  "require_closed_candle": true,
+  "markets": {
+    "forex": true,
+    "metals_commodities": true,
+    "indices": true,
+    "crypto": true,
+    "stocks_etfs": true,
+    "otc_digital_research_only": true
+  }
+}
